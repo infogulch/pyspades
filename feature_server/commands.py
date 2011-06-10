@@ -16,6 +16,9 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 import inspect
+import random
+import time
+from twisted.internet import reactor
 
 class InvalidPlayer(Exception):
     pass
@@ -187,7 +190,8 @@ def follow(connection, player = None):
     connection.follow = player
     connection.respawn_time = connection.protocol.follow_respawn_time
     player.send_chat('%s is now following you.' % connection.name)
-    return 'Next time you die you will spawn where %s is. To stop, type /follow' % player.name
+    return ('Next time you die you will spawn where %s is. To stop, type /follow' %
+        player.name)
 
 @name('nofollow')
 def no_follow(connection):
@@ -278,8 +282,6 @@ def unmute(connection, value):
     message = '%s has been unmuted by %s' % (player.name, connection.name)
     connection.protocol.send_chat(message, irc = True)
 
-from pyspades.server import position_data
-
 @admin
 def teleport(connection, player1, player2 = None):
     player1 = get_player(connection.protocol, player1)
@@ -293,6 +295,17 @@ def teleport(connection, player1, player2 = None):
 
     # set location!
     player.set_location(target.get_location())
+    connection.protocol.send_chat(message, irc = True)
+
+from pyspades.common import coordinates
+
+@admin
+def goto(connection, value):
+    x, y = coordinates(value)
+    x += 32
+    y += 32
+    connection.set_location((x, y, connection.protocol.map.get_height(x, y)))
+    message = '%s teleported to location %s' % (connection.name, value.upper())
     connection.protocol.send_chat(message, irc = True)
 
 @admin
@@ -309,8 +322,122 @@ def god(connection, value = None):
 @admin
 def reset_game(connection):
     connection.reset_game()
-    connection.protocol.send_chat('Game has been reset by %s' % (connection.name), irc = True)
+    connection.protocol.send_chat('Game has been reset by %s' % connection.name,
+        irc = True)
+
+from pyspades.server import grenade_packet, position_data, orientation_data
+from pyspades.collision import distance_3d_vector
+
+def pick_aux_connection(connection):
+    best = None
+    best_distance = 0.0
+    for player in connection.team.get_players():
+        distance = distance_3d_vector(connection.position, player.position)
+        if best is None or player.hp <= 0 and best.hp > 0:
+            best, best_distance = player, distance
+            continue
+        if player.hp > 0 and best.hp <= 0:
+            continue
+        if distance > best_distance:
+            best, best_distance = player, distance
+    return best
+
+def prepare_packet_data(data, x, y, z, player_id = None):
+    data.x = x
+    data.y = y
+    data.z = z
+    data.player_id = player_id
+
+def send_contained_ex(connection, what, only_to = None, exclude = None):
+    if only_to is not None:
+        only_to.send_contained(what)
+    else:
+        connection.protocol.send_contained(what, sender = exclude)
+
+def teleport_and_send(connection, packets, x, y, z,
+                      only_to = None, exclude = None):
+    start_x, start_y, start_z = connection.get_location()
+    prepare_packet_data(position_data, x, y, z, connection.player_id)
+    send_contained_ex(connection, position_data, only_to, exclude)
+    for packet in packets:
+        packet.player_id = connection.player_id
+        send_contained_ex(connection, packet, only_to, exclude)
+    prepare_packet_data(position_data, start_x, start_y, start_z,
+        connection.player_id)
+    send_contained_ex(connection, position_data, only_to, exclude)
+
+def desync_grenade(connection, x, y, z, fuse):
+    prepare_packet_data(orientation_data,
+        1.0 if connection.team.id == 0 else -1.0, 0.0, 0.0)
+    grenade_packet.value = fuse
+    packets = [orientation_data, grenade_packet]
+    if connection.aux is None:
+        connection.aux = pick_aux_connection(connection)
+    if connection is not connection.aux:
+        teleport_and_send(connection, packets, x, y, z, exclude = connection)
+        teleport_and_send(connection.aux, packets, x, y, z, only_to = connection)
+    else:
+        teleport_and_send(connection, packets, x, y, z)
+
+@admin
+def airstrike(connection, value):
+    start_x, start_y = coordinates(value)
+    start_z = 1
+    connection.aux = pick_aux_connection(connection)
+    for i in xrange(16):
+        x, y = start_x + random.randrange(64), start_y + random.randrange(64)
+        height = connection.protocol.map.get_height(x, y)
+        reactor.callLater(i * 0.45, desync_grenade, connection, x, y, start_z,
+            height * 0.037) #2.4
+
+@admin
+def airstrikeb(connection, value):
+    start_x, start_y = coordinates(value)
+    start_z = 1
+    increment_x = 6
+    connection.aux = pick_aux_connection(connection)
+    for r in xrange(5):
+        x, y = start_x + random.randrange(64), start_y + random.randrange(64)
+        fuse = connection.protocol.map.get_height(x, y) * 0.037
+        for i in xrange(5):
+            x += increment_x
+            reactor.callLater(r * 1.25 + i * 0.15, desync_grenade, connection,
+                x, y, start_z, fuse) #2.4
+
+@admin
+def rollmap(connection, filename = None, value = None):
+    start_x, start_y, end_x, end_y = 0, 0, 512, 512
+    if filename is None:
+        filename = connection.protocol.map_info.filename
+    if value is not None:
+        start_x, start_y = coordinates(value)
+        end_x, end_y = start_x + 64, start_y + 64
+    return connection.protocol.start_rollback(connection, filename,
+        start_x, start_y, end_x, end_y)
+
+@admin
+def rollback(connection, value = None):
+    return rollmap(connection, value = value)
+
+@admin
+def rollbackcancel(connection):
+    connection.protocol.end_rollback(connection)
     
+@admin
+def tweak(connection, var, value):
+    if var == 'rows':
+        connection.protocol.rollback_max_rows_per_cycle = int(value)
+    elif var == 'packets':
+        connection.protocol.rollback_max_packets_per_cycle = int(value)
+    elif var == 'time':
+        connection.protocol.rollback_time_between_cycles = float(value)
+    elif var == 'enabled':
+        connection.protocol.airstrike_enabled = (value != '0')
+    elif var == 'minscore':
+        connection.protocol.airstrike_min_score_req = int(value)
+    elif var == 'streak':
+        connection.protocol.airstrike_streak_req = int(value)
+
 command_list = [
     help,
     pm,
@@ -335,10 +462,17 @@ command_list = [
     toggle_kill,
     toggle_teamkill,
     teleport,
+    goto,
     god,
     follow,
     no_follow,
-    reset_game
+    reset_game,
+    airstrike,
+    airstrikeb,
+    rollmap,
+    rollback,
+    rollbackcancel,
+    tweak
 ]
 
 commands = {}
@@ -352,13 +486,13 @@ def handle_command(connection, command, parameters):
         command_func = commands[command]
     except KeyError:
         return 'Invalid command'
-    try:
-        return command_func(connection, *parameters)
-    except TypeError:
-        return 'Invalid number of arguments for %s' % command
-    except InvalidPlayer:
-        return 'No such player'
-    except InvalidTeam:
-        return 'Invalid team specifier'
-    except ValueError:
-        return 'Invalid parameters'
+    #try:
+    return command_func(connection, *parameters)
+    #except TypeError:
+        #return 'Invalid number of arguments for %s' % command
+    #except InvalidPlayer:
+        #return 'No such player'
+    #except InvalidTeam:
+        #return 'Invalid team specifier'
+    #except ValueError:
+        #return 'Invalid parameters'

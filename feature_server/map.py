@@ -7,6 +7,7 @@ class MapNotFound(IOError):
     pass
 
 class Map(object):
+    filename = None
     name = None
     author = None
     version = None
@@ -25,7 +26,8 @@ class Map(object):
             info = json.load(open(info_file, 'rb'))
         except IOError:
             info = {}
-            
+        
+        self.filename = name
         self.name = info.get('name', name)
         self.author = info.get('author', '(unknown)')
         self.version = info.get('version', '1.0')

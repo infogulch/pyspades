@@ -46,12 +46,12 @@ if sys.version_info < (2, 7):
         print '(optional: install psyco for optimizations)'
 
 import pyspades.debug
-from pyspades.server import ServerProtocol, ServerConnection, position_data
+from pyspades.server import ServerProtocol, ServerConnection, position_data, block_action, set_color
 from map import Map
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.python import log
-from pyspades.common import encode, decode
+from pyspades.common import encode, decode, make_color
 from pyspades.constants import *
 
 import json
@@ -71,6 +71,7 @@ class FeatureConnection(ServerConnection):
     god = False
     follow = None
     followable = True
+    aux = None
     
     def on_join(self):
         if self.protocol.motd is not None:
@@ -109,12 +110,14 @@ class FeatureConnection(ServerConnection):
             self.refill()
         elif not self.protocol.building:
             return False
+        if self.protocol.rollback_in_progress:
+            return False
         elif self.protocol.user_blocks is not None:
             self.protocol.user_blocks.add((x, y, z))
     
     def on_block_destroy(self, x, y, z, mode):
         if not self.god:
-            if not self.protocol.building:
+            if not self.protocol.building or self.protocol.rollback_in_progress:
                 return False
             elif (self.protocol.indestructable_blocks or
                 self.protocol.user_blocks is not None):
@@ -259,6 +262,22 @@ class FeatureProtocol(ServerProtocol):
     votekick_player = None
     voting_player = None
     votes = None
+    
+    # rollback
+    rollback_in_progress = False
+    rollback_max_rows_per_cycle = 20
+    rollback_max_packets_per_cycle = 20
+    rollback_time_between_cycles = 0.05
+    rollback_time_between_progress_updates = 10.0
+    rollback_start_time = None
+    rollback_last_chat = None
+    rollback_rows = None
+    rollback_total_rows = None
+    
+    # airstrike
+    airstrike_enabled = True
+    airstrike_min_score_req = 20
+    airstrike_streak_req = 10
     
     map_info = None
     indestructable_blocks = None
@@ -467,6 +486,87 @@ class FeatureProtocol(ServerProtocol):
             self.voting_player.last_votekick = reactor.seconds()
         self.votes = self.votekick_call = None
         self.voting_player = None
+    
+    # rollmap / rollback
+    
+    def start_rollback(self, connection, filename,
+                       start_x, start_y, end_x, end_y):
+        if self.rollback_in_progress:
+            return 'Rollback in progress.'
+        map = Map(filename)
+        self.send_chat('%s commences a rollback...' % connection.name, irc = True)
+        packet_generator = self.create_rollback_generator(connection. player_id,
+            self.map, map.data, start_x, start_y, end_x, end_y)
+        self.rollback_in_progress = True
+        self.rollback_start_time = time.time()
+        self.rollback_last_chat = self.rollback_start_time
+        self.rollback_rows = 0
+        self.rollback_total_rows = end_x - start_x
+        self.rollback_cycle(packet_generator)
+    
+    def end_rollback(self, connection):
+        if not self.rollback_in_progress:
+            return 'No rollback in progress.'
+        self.rollback_in_progress = False
+        self.send_chat('Rollback cancelled by %s' % connection.name, irc = True)
+    
+    def rollback_cycle(self, packet_generator):
+        if not self.rollback_in_progress:
+            return
+        try:
+            sent_packets = rows = 0
+            while (rows < self.rollback_max_rows_per_cycle and
+                   sent_packets < self.rollback_max_packets_per_cycle):
+                sent = packet_generator.next()
+                rows += (sent == 0)
+                sent_packets += sent
+            self.rollback_rows += rows
+            if (time.time() - self.rollback_last_chat >
+                self.rollback_time_between_progress_updates):
+                self.rollback_last_chat = time.time()
+                progress = (float(self.rollback_rows) /
+                    self.rollback_total_rows * 100.0)
+                self.send_chat('Rollback progress %s%%' % int(progress),
+                    irc = True)
+        except (StopIteration):
+            self.rollback_in_progress = False
+            self.update_entities()
+            self.send_chat('Rollback finished. Time taken: %.2fs' %
+                float(time.time() - self.rollback_start_time), irc = True)
+            return
+        reactor.callLater(self.rollback_time_between_cycles,
+            self.rollback_cycle, packet_generator)
+    
+    def create_rollback_generator(self, player_id, mapdata, mapdata_new,
+                                  start_x, start_y, end_x, end_y):
+        for x in xrange(start_x, end_x):
+            for y in xrange(start_y, end_y):
+                for z in xrange(63):
+                    packets_sent = 0
+                    block_action.value = None
+                    old_solid = mapdata.get_solid_fast(x, y, z)
+                    new_solid = mapdata_new.get_solid_fast(x, y, z)
+                    if old_solid and not new_solid:
+                        block_action.value = DESTROY_BLOCK
+                        mapdata.remove_point_fast(x, y, z)
+                    elif not old_solid and new_solid:
+                        block_action.value = BUILD_BLOCK
+                        new_color = mapdata_new.get_color(x, y, z)
+                        set_color.value = new_color & 0xFFFFFF
+                        set_color.player_id = player_id
+                        self.send_contained(set_color, save = True)
+                        packets_sent += 1
+                        mapdata.set_point_fast(x, y, z, new_color)
+                    
+                    if block_action.value is not None:
+                        block_action.x = x
+                        block_action.y = y
+                        block_action.z = z
+                        block_action.player_id = player_id
+                        self.send_contained(block_action, save = True)
+                        packets_sent += 1
+                        yield packets_sent
+            yield 0
     
     def send_chat(self, value, global_message = True, sender = None, irc = False):
         if irc:

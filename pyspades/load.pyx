@@ -91,6 +91,12 @@ cdef class VXLData:
             return 0
         return get_solid(x, y, z, self.map)
     
+    cpdef int get_solid_fast(self, int x, int y, int z):
+        return get_solid(x, y, z, self.map)
+    
+    cpdef int get_color(self, int x, int y, int z):
+        return get_color(x, y, z, self.map)
+    
     cpdef int get_z(self, int x, int y, int start = 0):
         return get_z(x, y, self.map, start)
     
@@ -118,6 +124,9 @@ cdef class VXLData:
         if taken > 0.1:
             print 'removing block at', x, y, z, 'took:', taken
     
+    def remove_point_fast(self, int x, int y, int z):
+        set_point(x, y, z, self.map, 0, 0)
+    
     cpdef bint has_neighbors(self, int x, int y, int z):
         return (
             self.get_solid(x + 1, y, z) or
@@ -127,7 +136,17 @@ cdef class VXLData:
             self.get_solid(x, y, z + 1) or
             self.get_solid(x, y, z - 1)
         )
-
+    
+    cpdef bint is_surface(self, int x, int y, int z):
+        return (
+            not self.get_solid(x, y, z - 1) or
+            not self.get_solid(x, y, z + 1) or
+            not self.get_solid(x + 1, y, z) or
+            not self.get_solid(x - 1, y, z) or
+            not self.get_solid(x, y + 1, z) or
+            not self.get_solid(x, y - 1, z)
+        )
+    
     cpdef list get_neighbors(self, int x, int y, int z):
             cdef list neighbors = []
             for (node_x, node_y, node_z) in ((x, y, z - 1),
@@ -139,7 +158,7 @@ cdef class VXLData:
                 if self.get_solid(node_x, node_y, node_z):
                     neighbors.append((node_x, node_y, node_z))
             return neighbors
-
+    
     cpdef bint check_node(self, int x, int y, int z, bint destroy = False):
         return check_node(x, y, z, self.map, destroy)
     
@@ -151,6 +170,9 @@ cdef class VXLData:
         cdef int color = make_color(r, g, b, a)
         set_point(x, y, z, self.map, 1, color)
         return True
+    
+    def set_point_fast(self, int x, int y, int z, int color):
+        set_point(x, y, z, self.map, 1, color)
     
     def get_overview(self):
         cdef unsigned int * data
@@ -166,7 +188,7 @@ cdef class VXLData:
                 data[i] = r | (g << 8) | (b << 16) | (255 << 24)
                 i += 1
         return data_python
-        
+    
     def generate(self):
         return save_vxl(self.map)
     
