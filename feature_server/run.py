@@ -314,20 +314,18 @@ class FeatureConnection(ServerConnection):
     def start_airstrike(self, value = None):
         if not self.protocol.airstrikes:
             return
-        if self.god and value is None:
-            return
-        elif not self.airstrike or value is None:
-            if self.airstrike:
-                return 'Airstrike support ready! Use with e.g. /airstrike A1'
-            elif self.kills < self.protocol.airstrike_min_score_req:
+        if value is None and (self.god or self.airstrike):
+            return 'Airstrike support ready! Use with e.g. /airstrike A1'
+        if not self.god:
+            if self.kills < self.protocol.airstrike_min_score_req:
                 return 'You need a score of 20 to unlock airstrikes!'
-            else:
+            elif not self.airstrike:
                 kills_left = self.protocol.airstrike_streak_req - (self.streak %
                     self.protocol.airstrike_streak_req)
                 return ('%s kills left for airstrike clearance!' % kills_left)
         x, y = coordinates(value)
         self.airstrike = False
-        self.protocol.send_chat('%s called in an airstrike on '
+        self.protocol.send_chat('Ally %s called in an airstrike on '
             'location %s' % (self.name, value.upper()), global_message = False,
             team = self.team)
         self.protocol.send_chat('[WARNING] Enemy airstrike headed to %s!' %
@@ -336,7 +334,7 @@ class FeatureConnection(ServerConnection):
     
     def do_airstrike(self, start_x, start_y):
         z = 1
-        self.aux = self.pick_aux_connection()
+        self.aux = self.find_aux_connection()
         for round in xrange(7):
             x = start_x + random.randrange(64)
             y = start_y + random.randrange(64)

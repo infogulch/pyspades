@@ -431,13 +431,13 @@ def handle_command(connection, command, parameters):
         command_func = commands[command]
     except KeyError:
         return 'Invalid command'
-    #try:
-    return command_func(connection, *parameters)
-    #except TypeError:
-        #return 'Invalid number of arguments for %s' % command
-    #except InvalidPlayer:
-        #return 'No such player'
-    #except InvalidTeam:
-        #return 'Invalid team specifier'
-    #except ValueError:
-        #return 'Invalid parameters'
+    try:
+        return command_func(connection, *parameters)
+    except TypeError:
+        return 'Invalid number of arguments for %s' % command
+    except InvalidPlayer:
+        return 'No such player'
+    except InvalidTeam:
+        return 'Invalid team specifier'
+    except ValueError:
+        return 'Invalid parameters'
