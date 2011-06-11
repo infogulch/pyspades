@@ -344,7 +344,7 @@ def rollback(connection, value = None):
 
 @admin
 def rollbackcancel(connection):
-    return connection.protocol.end_rollback(connection)
+    return connection.protocol.cancel_rollback(connection)
     
 @admin
 def tweak(connection, var, value):

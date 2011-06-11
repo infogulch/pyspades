@@ -388,6 +388,10 @@ class FeatureProtocol(ServerProtocol):
     rollback_last_chat = None
     rollback_rows = None
     rollback_total_rows = None
+    # debug
+    rollback_hit_max_rows = None
+    rollback_hit_max_unique_packets = None
+    rollback_hit_max_packets = None
     
     # airstrike
     airstrikes = True
@@ -416,7 +420,6 @@ class FeatureProtocol(ServerProtocol):
             map = Map(config['map'])
             self.map = map.data
             self.map_info = map
-            #self.rollback_map = copy.copy(map.data)
             self.rollback_map = Map(config['map']).data
         except KeyError:
             raise SystemExit('no map specified!')
@@ -589,9 +592,8 @@ class FeatureProtocol(ServerProtocol):
     def end_votekick(self, enough, result):
         victim = self.votekick_player
         self.votekick_player = None
-        message = 'Votekick for %s has ended. %s.' % (
-            victim.name, result)
-        self.send_chat(message, irc = True)
+        self.send_chat('Votekick for %s has ended. %s.' % (victim.name, result),
+            irc = True)
         if enough:
             if self.votekick_ban_duration:
                 self.add_ban(victim.address[0], temporary = True)
@@ -622,22 +624,40 @@ class FeatureProtocol(ServerProtocol):
         self.rollback_last_chat = self.rollback_start_time
         self.rollback_rows = 0
         self.rollback_total_rows = end_x - start_x
+        self.rollback_hit_max_rows = 0
+        self.rollback_hit_max_unique_packets = 0
+        self.rollback_hit_max_packets = 0
         self.rollback_cycle(packet_generator)
     
-    def end_rollback(self, connection):
+    def cancel_rollback(self, connection):
         if not self.rollback_in_progress:
             return 'No rollback in progress.'
+        self.end_rollback('Cancelled by %s' % connection.name)
+    
+    def end_rollback(self, result):
         self.rollback_in_progress = False
-        self.send_chat('Rollback cancelled by %s' % connection.name, irc = True)
+        self.update_entities()
+        self.send_chat('Rollback ended. %s' % result, irc = True)
+        self.send_chat('Caps hit: Rows %s, Packets %s, Unique %s' %
+            (self.rollback_hit_max_rows, self.rollback_hit_max_packets,
+            self.rollback_hit_max_unique_packets))
     
     def rollback_cycle(self, packet_generator):
         if not self.rollback_in_progress:
             return
         try:
             sent = rows = 0
-            while (rows < self.rollback_max_rows and 
-                   sent < self.rollback_max_unique_packets and
-                   sent * len(self.connections) < self.rollback_max_packets):
+            while (True):
+                if rows > self.rollback_max_rows:
+                    self.rollback_hit_max_rows += 1
+                    break
+                if sent > self.rollback_max_unique_packets:
+                    self.rollback_hit_max_unique_packets += 1
+                    break
+                if sent * len(self.connections) > self.rollback_max_packets:
+                    self.rollback_hit_max_packets += 1
+                    break
+                
                 sent_packets = packet_generator.next()
                 sent += sent_packets
                 rows += (sent_packets == 0)
@@ -650,10 +670,8 @@ class FeatureProtocol(ServerProtocol):
                 self.send_chat('Rollback progress %s%%' % int(progress),
                     irc = True)
         except (StopIteration):
-            self.rollback_in_progress = False
-            self.update_entities()
-            self.send_chat('Rollback finished. Time taken: %.2fs' %
-                float(time.time() - self.rollback_start_time), irc = True)
+            self.end_rollback('Time taken: %.2fs' % 
+                float(time.time() - self.rollback_start_time))
             return
         reactor.callLater(self.rollback_time_between_cycles,
             self.rollback_cycle, packet_generator)
