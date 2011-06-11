@@ -46,18 +46,23 @@ if sys.version_info < (2, 7):
         print '(optional: install psyco for optimizations)'
 
 import pyspades.debug
-from pyspades.server import ServerProtocol, ServerConnection, position_data, block_action, set_color
+from pyspades.server import (ServerProtocol, ServerConnection,
+                            position_data, orientation_data, grenade_packet,
+                            block_action, set_color, intel_action)
+from pyspades.serverloaders import PositionData
 from map import Map
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from twisted.python import log
-from pyspades.common import encode, decode, make_color
+from pyspades.common import encode, decode, make_color, coordinates
 from pyspades.constants import *
+from pyspades.collision import distance_3d_vector
 
 import json
 import random
 import time
 import commands
+import copy
 
 def writelines(fp, lines):
     for line in lines:
@@ -72,6 +77,8 @@ class FeatureConnection(ServerConnection):
     follow = None
     followable = True
     aux = None
+    streak = 0
+    airstrike = False
     
     def on_join(self):
         if self.protocol.motd is not None:
@@ -110,14 +117,17 @@ class FeatureConnection(ServerConnection):
             self.refill()
         elif not self.protocol.building:
             return False
-        if self.protocol.rollback_in_progress:
+        if (self.protocol.rollback_in_progress and 
+            self.protocol.rollbacking_player is self):
+            self.send_chat("The rollback starter can't build during the "
+                           "rollback")
             return False
         elif self.protocol.user_blocks is not None:
             self.protocol.user_blocks.add((x, y, z))
     
     def on_block_destroy(self, x, y, z, mode):
         if not self.god:
-            if not self.protocol.building or self.protocol.rollback_in_progress:
+            if not self.protocol.building:
                 return False
             elif (self.protocol.indestructable_blocks or
                 self.protocol.user_blocks is not None):
@@ -137,11 +147,17 @@ class FeatureConnection(ServerConnection):
                                 if is_indestructable(nade_x, nade_y, nade_z):
                                     return False
     
+    def on_block_color(self, (r, g, b)):
+        if (self.protocol.rollback_in_progress and
+            self.protocol.rollbacking_player is self):
+            return False
+    
     def on_hit(self, hit_amount, player):
         if not self.protocol.killing:
             return False
         elif player.god:
-            self.send_chat("You can't hurt %s! That player is in *god mode*" % player.name)
+            self.send_chat("You can't hurt %s! That player is in *god mode*" %
+                player.name)
             return False
     
     def on_grenade(self, time_left):
@@ -176,22 +192,28 @@ class FeatureConnection(ServerConnection):
             self.send_chat('(Chat not sent - you are muted)')
             return False
     
-    def kick(self, reason = None, silent = False):
-        if not silent:
-            if reason is not None:
-                message = '%s was kicked: %s' % (self.name, reason)
-            else:
-                message = '%s was kicked' % self.name
-            self.protocol.send_chat(message, irc = True)
-        self.disconnect()
+    def on_kill(self, killer):
+        self.streak = 0
+        self.airstrike = False
+        if killer is None:
+            return
+        killer.streak += 1
+        if killer.protocol.airstrikes:
+            if killer.streak % killer.protocol.airstrike_streak_req == 0:
+                killer.send_chat('Airstrike support ready! Launch with e.g. '
+                                 '/airstrike B4')
+                killer.airstrike = True
+                intel_action.action_type = 4
+                killer.send_contained(intel_action)
     
-    def ban(self, reason = None):
-        if reason is not None:
-            message = '%s banned: %s' % (self.name, reason)
-        else:
-            message = '%s banned' % self.name
-        self.protocol.send_chat(message, irc = True)
-        self.protocol.add_ban(self.address[0])
+    def add_score(self, score):
+        if self.protocol.airstrikes:
+            if (self.kills < self.protocol.airstrike_min_score_req and
+                self.kills + score >= self.protocol.airstrike_min_score_req):
+                self.send_chat('You have unlocked airstrike support!')
+                self.send_chat('Each 10-kill streak will clear you for one '
+                               'airstrike.')
+        self.kills += score
     
     def get_followers(self):
         return [player for player in self.protocol.players.values()
@@ -208,6 +230,23 @@ class FeatureConnection(ServerConnection):
             self.team.get_random_location())
         z -= 1
         return x, y, z
+    
+    def kick(self, reason = None, silent = False):
+        if not silent:
+            if reason is not None:
+                message = '%s was kicked: %s' % (self.name, reason)
+            else:
+                message = '%s was kicked' % self.name
+            self.protocol.send_chat(message, irc = True)
+        self.disconnect()
+    
+    def ban(self, reason = None):
+        if reason is not None:
+            message = '%s banned: %s' % (self.name, reason)
+        else:
+            message = '%s banned' % self.name
+        self.protocol.send_chat(message, irc = True)
+        self.protocol.add_ban(self.address[0])
     
     def send_lines(self, lines):
         current_time = 0
@@ -227,6 +266,79 @@ class FeatureConnection(ServerConnection):
         position_data.z = z
         position_data.player_id = self.player_id
         self.protocol.send_contained(position_data)
+    
+    def desync_grenade(self, x, y, z, fuse):
+        """Gives the appearance of a grenade appearing from thin air by moving
+        an auxiliary player to the target location and then back"""
+        new_position = PositionData()
+        new_position.set((x, y, z), self.player_id)
+        orientation_data.set(([1.0, -1.0][self.team.id], 0.0, 0.0),
+            self.player_id)
+        grenade_packet.value = fuse
+        grenade_packet.player_id = self.player_id
+        old_position = PositionData()
+        old_position.set(self.get_location(), self.player_id)
+        packets = [new_position, orientation_data, grenade_packet, old_position]
+        if self.aux is None:
+            self.aux = self.find_aux_connection()
+        if self.aux is not self:
+            for packet in packets:
+                self.protocol.send_contained(packet, sender = self)
+            for packet in packets:
+                packet.player_id = self.aux.player_id
+                self.protocol.send_contained(packet, target = self)
+        else:
+            for packet in packets:
+                self.protocol.send_contained(packet)
+    
+    def find_aux_connection(self):
+        """Attempts to find an allied player far away, preferrably dead,
+        so that we don't see it flipping out right in front of us"""
+        best = None
+        best_distance = 0.0
+        for player in self.team.get_players():
+            distance = distance_3d_vector(self.position, player.position)
+            if best is None or player.hp <= 0 and best.hp > 0:
+                best, best_distance = player, distance
+                continue
+            if player.hp > 0 and best.hp <= 0:
+                continue
+            if distance > best_distance:
+                best, best_distance = player, distance
+        return best
+    
+    # airstrike
+    
+    def start_airstrike(self, value):
+        if not self.protocol.airstrikes:
+            return
+        if not self.airstrike and not self.god:
+            if self.kills < self.protocol.airstrike_min_score_req:
+                return 'You need to have a score of 20 to unlock airstrikes!'
+            else:
+                return ('%s kills left for airstrike clearance' %
+                    self.protocol.airstrike_streak_req - (self.streak %
+                    self.protocol.airstrike_streak_req))
+        x, y = coordinates(value)
+        self.airstrike = False
+        self.protocol.send_chat('[Team] %s called in an airstrike on '
+            'location %s' % (self.name, value.upper()), global_message = False,
+            team = self.team)
+        self.protocol.send_chat('[WARNING] Enemy airstrike headed to %s!' %
+            value.upper(), global_message = False, team = self.team.other)
+        reactor.callLater(3.0, self.do_airstrike, x, y)
+    
+    def do_airstrike(self, start_x, start_y):
+        z = 1
+        #self.aux = self.pick_aux_connection()
+        for round in xrange(7):
+            x = start_x + random.randrange(64)
+            y = start_y + random.randrange(64)
+            fuse = self.protocol.map.get_height(x, y) * 0.037
+            for i in xrange(5):
+                x += 6
+                time = round * 1.1 + i * 0.16
+                reactor.callLater(time, self.desync_grenade, x, y, z, fuse)
 
 def encode_lines(value):
     if value is not None:
@@ -265,17 +377,20 @@ class FeatureProtocol(ServerProtocol):
     
     # rollback
     rollback_in_progress = False
-    rollback_max_rows_per_cycle = 20
-    rollback_max_packets_per_cycle = 20
+    rollback_max_rows = 10 # per 'cycle', intended to cap cpu usage
+    rollback_max_packets = 300 # per 'cycle' cap for (unique packets * players)
+    rollback_max_unique_packets = 18 # per 'cycle', each block op is at least 1
     rollback_time_between_cycles = 0.05
     rollback_time_between_progress_updates = 10.0
+    rollbacking_player = None
+    rollback_map = None
     rollback_start_time = None
     rollback_last_chat = None
     rollback_rows = None
     rollback_total_rows = None
     
     # airstrike
-    airstrike_enabled = True
+    airstrikes = True
     airstrike_min_score_req = 20
     airstrike_streak_req = 10
     
@@ -301,6 +416,8 @@ class FeatureProtocol(ServerProtocol):
             map = Map(config['map'])
             self.map = map.data
             self.map_info = map
+            #self.rollback_map = copy.copy(map.data)
+            self.rollback_map = Map(config['map']).data
         except KeyError:
             raise SystemExit('no map specified!')
             return
@@ -317,7 +434,8 @@ class FeatureProtocol(ServerProtocol):
         
         self.max_scores = config.get('cap_limit', None)
         self.respawn_time = config.get('respawn_time', 5)
-        self.follow_respawn_time = config.get('follow_respawn_time', self.respawn_time)
+        self.follow_respawn_time = config.get('follow_respawn_time',
+            self.respawn_time)
         self.master = config.get('master', True)
         self.friendly_fire = config.get('friendly_fire', True)
         self.motd = self.format_lines(config.get('motd', None))
@@ -487,16 +605,18 @@ class FeatureProtocol(ServerProtocol):
         self.votes = self.votekick_call = None
         self.voting_player = None
     
-    # rollmap / rollback
+    # rollback
     
     def start_rollback(self, connection, filename,
                        start_x, start_y, end_x, end_y):
         if self.rollback_in_progress:
             return 'Rollback in progress.'
-        map = Map(filename)
-        self.send_chat('%s commences a rollback...' % connection.name, irc = True)
-        packet_generator = self.create_rollback_generator(connection. player_id,
-            self.map, map.data, start_x, start_y, end_x, end_y)
+        map = self.rollback_map if filename is None else Map(filename).data
+        self.send_chat('%s commenced a rollback...' % connection.name,
+            irc = True)
+        packet_generator = self.create_rollback_generator(connection,
+            self.map, map, start_x, start_y, end_x, end_y)
+        self.rollbacking_player = connection
         self.rollback_in_progress = True
         self.rollback_start_time = time.time()
         self.rollback_last_chat = self.rollback_start_time
@@ -514,12 +634,13 @@ class FeatureProtocol(ServerProtocol):
         if not self.rollback_in_progress:
             return
         try:
-            sent_packets = rows = 0
-            while (rows < self.rollback_max_rows_per_cycle and
-                   sent_packets < self.rollback_max_packets_per_cycle):
-                sent = packet_generator.next()
-                rows += (sent == 0)
-                sent_packets += sent
+            sent = rows = 0
+            while (rows < self.rollback_max_rows and 
+                   sent < self.rollback_max_unique_packets and
+                   sent * len(self.connections) < self.rollback_max_packets):
+                sent_packets = packet_generator.next()
+                sent += sent_packets
+                rows += (sent_packets == 0)
             self.rollback_rows += rows
             if (time.time() - self.rollback_last_chat >
                 self.rollback_time_between_progress_updates):
@@ -537,41 +658,47 @@ class FeatureProtocol(ServerProtocol):
         reactor.callLater(self.rollback_time_between_cycles,
             self.rollback_cycle, packet_generator)
     
-    def create_rollback_generator(self, player_id, mapdata, mapdata_new,
+    def create_rollback_generator(self, connection, mapdata, mapdata_new,
                                   start_x, start_y, end_x, end_y):
+        last_color = None
         for x in xrange(start_x, end_x):
             for y in xrange(start_y, end_y):
                 for z in xrange(63):
                     packets_sent = 0
                     block_action.value = None
-                    old_solid = mapdata.get_solid_fast(x, y, z)
-                    new_solid = mapdata_new.get_solid_fast(x, y, z)
+                    old_solid = mapdata.get_solid(x, y, z)
+                    new_solid = mapdata_new.get_solid(x, y, z)
                     if old_solid and not new_solid:
                         block_action.value = DESTROY_BLOCK
-                        mapdata.remove_point_fast(x, y, z)
+                        mapdata.remove_point(x, y, z,
+                            user = False, no_collapse = True)
                     elif not old_solid and new_solid:
                         block_action.value = BUILD_BLOCK
                         new_color = mapdata_new.get_color(x, y, z)
                         set_color.value = new_color & 0xFFFFFF
-                        set_color.player_id = player_id
-                        self.send_contained(set_color, save = True)
-                        packets_sent += 1
-                        mapdata.set_point_fast(x, y, z, new_color)
+                        set_color.player_id = connection.player_id
+                        connection.send_contained(set_color)
+                        if new_color != last_color:
+                            last_color = new_color
+                            self.send_contained(set_color, save = True)
+                            packets_sent += 1
+                        mapdata.set_point_nochecks(x, y, z, new_color)
                     
                     if block_action.value is not None:
                         block_action.x = x
                         block_action.y = y
                         block_action.z = z
-                        block_action.player_id = player_id
+                        block_action.player_id = connection.player_id
                         self.send_contained(block_action, save = True)
                         packets_sent += 1
                         yield packets_sent
             yield 0
     
-    def send_chat(self, value, global_message = True, sender = None, irc = False):
+    def send_chat(self, value, global_message = True, sender = None,
+                  team = None, irc = False):
         if irc:
             self.irc_say('* %s' % value)
-        ServerProtocol.send_chat(self, value, global_message, sender)
+        ServerProtocol.send_chat(self, value, global_message, sender, team)
 
 PORT = 32887
 

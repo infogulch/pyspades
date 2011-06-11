@@ -213,6 +213,8 @@ class ServerConnection(BaseConnection):
                         if vector_collision(self.position, self.team.base):
                             self.refill()
                             if other_flag.player is self:
+                                if self.on_flag_capture() == False:
+                                    return
                                 self.capture_flag()
                         if other_flag.player is None and vector_collision(
                         self.position, other_flag):
@@ -264,7 +266,10 @@ class ServerConnection(BaseConnection):
                         set_weapon.value = contained.value
                         self.protocol.send_contained(set_weapon, sender = self)
                     elif contained.id == clientloaders.SetColor.id:
-                        self.color = get_color(contained.value)                        
+                        color = get_color(contained.value)
+                        if self.on_block_color(color) == False:
+                            return
+                        self.color = color
                         set_color.player_id = self.player_id
                         set_color.value = contained.value
                         self.protocol.send_contained(set_color, sender = self,
@@ -403,7 +408,7 @@ class ServerConnection(BaseConnection):
         player = flag.player
         if player is not self:
             return
-        self.kills += 10 # 10 points for intel
+        self.add_score(10) # 10 points for intel
         if (self.protocol.max_score not in (0, None) and 
         self.team.score + 1 >= self.protocol.max_score):
             self.reset_game()
@@ -484,11 +489,15 @@ class ServerConnection(BaseConnection):
             sender = self
         else:
             if by is not None:
-                by.kills += 1
+                by.add_score(1)
             sender = None
+        self.on_kill(by)
         self.protocol.send_contained(kill_action, sender = sender, save = True)
         self.respawn()
     
+    def add_score(self, score):
+        self.kills += score
+        
     def send_map(self, ack = None):
         if self.map_data is None:
             return
@@ -556,6 +565,9 @@ class ServerConnection(BaseConnection):
     def on_hit(self, hit_amount, hit_player):
         pass
     
+    def on_kill(self, killer):
+        pass
+    
     def on_team_join(self, team):
         pass
     
@@ -566,6 +578,12 @@ class ServerConnection(BaseConnection):
         pass
 
     def on_block_destroy(self, x, y, z, mode):
+        pass
+    
+    def on_block_color(self, color):
+        pass
+    
+    def on_flag_capture(self):
         pass
 
 class Vertex3(object):
@@ -748,7 +766,7 @@ class ServerProtocol(DatagramProtocol):
                 self.send_contained(intel_action)
     
     def send_contained(self, contained, sequence = False, sender = None,
-                       team = None, save = False):
+                       team = None, target = None, save = False):
         if sequence:
             loader = sized_sequence
         else:
@@ -761,6 +779,8 @@ class ServerProtocol(DatagramProtocol):
                 continue
             if team is not None and player.team is not team:
                 continue
+            if target is not None and player is not target:
+                continue
             if sequence:
                 player.orientation_sequence = (player.orientation_sequence + 1
                     ) & 0xFFFF
@@ -770,8 +790,11 @@ class ServerProtocol(DatagramProtocol):
             else:
                 player.send_loader(loader, not sequence)
     
-    def send_chat(self, value, global_message = True, sender = None):
+    def send_chat(self, value, global_message = True, sender = None,
+                  team = None):
         for player in self.players.values():
             if player is sender:
+                continue
+            if team is not None and player.team is not team:
                 continue
             player.send_chat(value, global_message)

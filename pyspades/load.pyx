@@ -85,13 +85,8 @@ cdef class VXLData:
             x, y, z, self.map)))
     
     cpdef int get_solid(self, int x, int y, int z):
-        if (x not in range(512) or
-            y not in range(512) or
-            z not in range(64)):
+        if x < 0 or x >= 512 or y < 0 or y >= 512 or z < 0 or z >= 64:
             return 0
-        return get_solid(x, y, z, self.map)
-    
-    cpdef int get_solid_fast(self, int x, int y, int z):
         return get_solid(x, y, z, self.map)
     
     cpdef int get_color(self, int x, int y, int z):
@@ -107,14 +102,16 @@ cdef class VXLData:
                 return h_z + 1
         return 0
     
-    def remove_point(self, int x, int y, int z, bint user = True):
-        if x not in range(512) or y not in range(512) or z not in range(63):
+    def remove_point(self, int x, int y, int z, bint user = True, bint no_collapse = False):
+        if x < 0 or x >= 512 or y < 0 or y >= 512 or z < 0 or z >= 64:
             return
         if user and z == 62:
             return
         if not get_solid(x, y, z, self.map):
             return
         set_point(x, y, z, self.map, 0, 0)
+        if no_collapse:
+            return
         start = time.time()
         for node_x, node_y, node_z in self.get_neighbors(x, y, z):
             if node_z >= 62:
@@ -123,9 +120,6 @@ cdef class VXLData:
         taken = time.time() - start
         if taken > 0.1:
             print 'removing block at', x, y, z, 'took:', taken
-    
-    def remove_point_fast(self, int x, int y, int z):
-        set_point(x, y, z, self.map, 0, 0)
     
     cpdef bint has_neighbors(self, int x, int y, int z):
         return (
@@ -171,7 +165,7 @@ cdef class VXLData:
         set_point(x, y, z, self.map, 1, color)
         return True
     
-    def set_point_fast(self, int x, int y, int z, int color):
+    def set_point_nochecks(self, int x, int y, int z, int color):
         set_point(x, y, z, self.map, 1, color)
     
     def get_overview(self):
