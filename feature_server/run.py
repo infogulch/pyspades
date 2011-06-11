@@ -78,6 +78,7 @@ class FeatureConnection(ServerConnection):
     followable = True
     aux = None
     streak = 0
+    best_streak = 0
     airstrike = False
     
     def on_join(self):
@@ -198,6 +199,7 @@ class FeatureConnection(ServerConnection):
         if killer is None:
             return
         killer.streak += 1
+        killer.best_streak = max(killer.streak, killer.best_streak)
         if killer.protocol.airstrikes:
             if killer.streak % killer.protocol.airstrike_streak_req == 0:
                 killer.send_chat('Airstrike support ready! Launch with e.g. '
@@ -228,7 +230,7 @@ class FeatureConnection(ServerConnection):
     def get_follow_location(self):
         x, y, z = (self.follow.position.get() if self.follow.hp else
             self.team.get_random_location())
-        z -= 1
+        z -= 2
         return x, y, z
     
     def kick(self, reason = None, silent = False):
@@ -309,19 +311,23 @@ class FeatureConnection(ServerConnection):
     
     # airstrike
     
-    def start_airstrike(self, value):
+    def start_airstrike(self, value = None):
         if not self.protocol.airstrikes:
             return
-        if not self.airstrike and not self.god:
-            if self.kills < self.protocol.airstrike_min_score_req:
-                return 'You need to have a score of 20 to unlock airstrikes!'
+        if self.god and value is None:
+            return
+        elif not self.airstrike or value is None:
+            if self.airstrike:
+                return 'Airstrike support ready! Use with e.g. /airstrike A1'
+            elif self.kills < self.protocol.airstrike_min_score_req:
+                return 'You need a score of 20 to unlock airstrikes!'
             else:
-                return ('%s kills left for airstrike clearance' %
-                    self.protocol.airstrike_streak_req - (self.streak %
-                    self.protocol.airstrike_streak_req))
+                kills_left = self.protocol.airstrike_streak_req - (self.streak %
+                    self.protocol.airstrike_streak_req)
+                return ('%s kills left for airstrike clearance!' % kills_left)
         x, y = coordinates(value)
         self.airstrike = False
-        self.protocol.send_chat('[Team] %s called in an airstrike on '
+        self.protocol.send_chat('%s called in an airstrike on '
             'location %s' % (self.name, value.upper()), global_message = False,
             team = self.team)
         self.protocol.send_chat('[WARNING] Enemy airstrike headed to %s!' %
@@ -330,11 +336,11 @@ class FeatureConnection(ServerConnection):
     
     def do_airstrike(self, start_x, start_y):
         z = 1
-        #self.aux = self.pick_aux_connection()
+        self.aux = self.pick_aux_connection()
         for round in xrange(7):
             x = start_x + random.randrange(64)
             y = start_y + random.randrange(64)
-            fuse = self.protocol.map.get_height(x, y) * 0.037
+            fuse = self.protocol.map.get_height(x, y) * 0.038
             for i in xrange(5):
                 x += 6
                 time = round * 1.1 + i * 0.16
@@ -396,7 +402,7 @@ class FeatureProtocol(ServerProtocol):
     # airstrike
     airstrikes = True
     airstrike_min_score_req = 20
-    airstrike_streak_req = 10
+    airstrike_streak_req = 8
     
     map_info = None
     indestructable_blocks = None

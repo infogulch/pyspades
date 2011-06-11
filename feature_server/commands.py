@@ -202,8 +202,12 @@ def no_follow(connection):
     return 'Teammates will %s be able to follow you.' % (
         'now' if connection.followable else 'no longer')
 
-def airstrike(connection, value):
+def airstrike(connection, value = None):
     return connection.start_airstrike(value)
+
+def streak(connection):
+    return ('Your current kill streak is %s. Best is %s kills.' %
+        (connection.streak, connection.best_streak))
 
 @admin
 def lock(connection, value):
@@ -308,7 +312,7 @@ def goto(connection, value):
     x, y = coordinates(value)
     x += 32
     y += 32
-    connection.set_location((x, y, connection.protocol.map.get_height(x, y)))
+    connection.set_location((x, y, connection.protocol.map.get_height(x, y) - 2))
     message = '%s teleported to location %s' % (connection.name, value.upper())
     connection.protocol.send_chat(message, irc = True)
 
@@ -408,6 +412,7 @@ command_list = [
     follow,
     no_follow,
     airstrike,
+    streak,
     reset_game,
     rollmap,
     rollback,
@@ -426,13 +431,13 @@ def handle_command(connection, command, parameters):
         command_func = commands[command]
     except KeyError:
         return 'Invalid command'
-    try:
-        return command_func(connection, *parameters)
-    except TypeError:
-        return 'Invalid number of arguments for %s' % command
-    except InvalidPlayer:
-        return 'No such player'
-    except InvalidTeam:
-        return 'Invalid team specifier'
-    except ValueError:
-        return 'Invalid parameters'
+    #try:
+    return command_func(connection, *parameters)
+    #except TypeError:
+        #return 'Invalid number of arguments for %s' % command
+    #except InvalidPlayer:
+        #return 'No such player'
+    #except InvalidTeam:
+        #return 'Invalid team specifier'
+    #except ValueError:
+        #return 'Invalid parameters'
