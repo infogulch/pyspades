@@ -347,19 +347,37 @@ def rollbackcancel(connection):
     return connection.protocol.cancel_rollback(connection)
     
 @admin
-def tweak(connection, var, value):
-    if var == 'rows':
-        connection.protocol.rollback_max_rows_per_cycle = int(value)
-    elif var == 'packets':
-        connection.protocol.rollback_max_packets_per_cycle = int(value)
-    elif var == 'time':
-        connection.protocol.rollback_time_between_cycles = float(value)
-    elif var == 'airstrikes':
-        connection.protocol.airstrikes = (value != '0')
-    elif var == 'minscore':
-        connection.protocol.airstrike_min_score_req = int(value)
-    elif var == 'streak':
-        connection.protocol.airstrike_streak_req = int(value)
+def tweak(connection, var, value = None):
+    if value is None:
+        if var == 'rows':
+            return ('%s' % connection.protocol.rollback_max_rows)
+        elif var == 'packets':
+            return ('%s' % connection.protocol.rollback_max_packets)
+        elif var == 'uniques':
+            return ('%s' % connection.protocol.rollback_max_unique_packets)
+        elif var == 'time':
+            return ('%s' % connection.protocol.rollback_time_between_cycles)
+        elif var == 'airstrikes':
+            return ('%s' % connection.protocol.airstrikes)
+        elif var == 'minscore':
+            return ('%s' % connection.protocol.airstrike_min_score_req)
+        elif var == 'streak':
+            return ('%s' % connection.protocol.airstrike_streak_req)
+    else:
+        if var == 'rows':
+            connection.protocol.rollback_max_rows = int(value)
+        elif var == 'packets':
+            connection.protocol.rollback_max_packets = int(value)
+        elif var == 'uniques':
+            connection.protocol.rollback_max_unique_packets = int(value)
+        elif var == 'time':
+            connection.protocol.rollback_time_between_cycles = float(value)
+        elif var == 'airstrikes':
+            connection.protocol.airstrikes = (value != '0')
+        elif var == 'minscore':
+            connection.protocol.airstrike_min_score_req = int(value)
+        elif var == 'streak':
+            connection.protocol.airstrike_streak_req = int(value)
 
 command_list = [
     help,
