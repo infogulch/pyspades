@@ -1,5 +1,5 @@
 {
-    "name" : "local",
+    "name" : "pyspades server",
     "motd" : [
         "Welcome to %(server_name)s! See /help for new commands.",
         "Map is %(map_name)s by %(map_author)s.",
@@ -11,22 +11,22 @@
         "/AIRSTRIKE Air support!  Try it out just like that for more details"
     ],
     "tips" : [
-        "Here you can deploy airstrikes, form squads and more.  Type /help for info!"
+        "Here you can deploy airstrikes, form squads and more!  Type /help for info."
     ],
-    "tip_frequency" : 2,
+    "tip_frequency" : 5,
     "rules" : [
         "No griefing, no bad words, etc."
     ],
-    "max_players" : 6,
+    "max_players" : 32,
     "cap_limit" : 10,
-    "map" : "normandie",
-    "respawn_time" : 2,
-    "follow_respawn_time" : 4,
+    "map" : "pyspades",
+    "respawn_time" : 5,
+    "follow_respawn_time" : 8,
     "max_followers" : 3,
-    "master" : false,
+    "master" : true,
     "friendly_fire" : false,
     "passwords" : {
-        "admin" : ["ass"]
+        "admin" : ["replaceme"]
     },
     "ssh" : {
         "enabled" : false,
@@ -41,18 +41,19 @@
     }, 
     "server_prefix" : "[*]",
     "user_blocks_only" : false,
+    "rollback_on_game_end" : false,
     "logfile" : "log.txt",
-    "balanced_teams" : 0,
+    "balanced_teams" : 1,
     "login_retries" : 3,
-    "votekick_ban_duration" : 1,
+    "votekick_ban_duration" : 10,
     "irc" : {
         "enabled" : false,
-        "nickname" : "homper",
+        "nickname" : "pyspades",
         "username" : "pyspades",
         "realname" : "pyspades server bot",
-        "server" : "irc.esper.net",
+        "server" : "irc.quakenet.org",
         "port" : 6667,
-        "channel" : "#humpy",
+        "channel" : "#pyspades.bots",
         "commandprefix" : "."
     }
 }
