@@ -92,6 +92,8 @@ cdef class VXLData:
         return get_solid(x, y, z, self.map)
     
     cpdef int get_color(self, int x, int y, int z):
+        if x < 0 or x >= 512 or y < 0 or y >= 512 or z < 0 or z >= 64:
+            return 0
         return get_color(x, y, z, self.map)
     
     cpdef int get_z(self, int x, int y, int start = 0):

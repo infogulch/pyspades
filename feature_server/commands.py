@@ -331,60 +331,34 @@ def god(connection, value = None):
 
 @admin
 def reset_game(connection):
-    connection.protocol.reset_game()
+    connection.protocol.reset_game(connection)
     connection.protocol.send_chat('Game has been reset by %s' % connection.name,
         irc = True)
 
 @admin
-def rollmap(connection, filename = None, value = None):
-    start_x, start_y, end_x, end_y = 0, 0, 512, 512
-    if value is not None:
-        start_x, start_y = coordinates(value)
+def rollmap(connection, filename = None, first_arg = None, second_arg = None):
+    start_x, start_y, end_x, end_y, z_offset = 0, 0, 512, 512, 0
+    if first_arg is not None and second_arg is None:
+        try:
+            start_x, start_y = coordinates(first_arg)
+            end_x, end_y = start_x + 64, start_y + 64
+        except (ValueError):
+            z_offset = int(first_arg)
+    elif first_arg is not None and second_arg is not None:
+        start_x, start_y = coordinates(first_arg)
         end_x, end_y = start_x + 64, start_y + 64
+        z_offset = int(second_arg)
     return connection.protocol.start_rollback(connection, filename,
-        start_x, start_y, end_x, end_y)
+        start_x, start_y, end_x, end_y, z_offset)
 
 @admin
 def rollback(connection, value = None):
-    return rollmap(connection, value = value)
+    return rollmap(connection, first_arg = value)
 
 @admin
 def rollbackcancel(connection):
     return connection.protocol.cancel_rollback(connection)
     
-@admin
-def tweak(connection, var, value = None):
-    if value is None:
-        if var == 'rows':
-            return ('%s' % connection.protocol.rollback_max_rows)
-        elif var == 'packets':
-            return ('%s' % connection.protocol.rollback_max_packets)
-        elif var == 'uniques':
-            return ('%s' % connection.protocol.rollback_max_unique_packets)
-        elif var == 'time':
-            return ('%s' % connection.protocol.rollback_time_between_cycles)
-        elif var == 'airstrikes':
-            return ('%s' % connection.protocol.airstrikes)
-        elif var == 'minscore':
-            return ('%s' % connection.protocol.airstrike_min_score_req)
-        elif var == 'streak':
-            return ('%s' % connection.protocol.airstrike_streak_req)
-    else:
-        if var == 'rows':
-            connection.protocol.rollback_max_rows = int(value)
-        elif var == 'packets':
-            connection.protocol.rollback_max_packets = int(value)
-        elif var == 'uniques':
-            connection.protocol.rollback_max_unique_packets = int(value)
-        elif var == 'time':
-            connection.protocol.rollback_time_between_cycles = float(value)
-        elif var == 'airstrikes':
-            connection.protocol.airstrikes = (value != '0')
-        elif var == 'minscore':
-            connection.protocol.airstrike_min_score_req = int(value)
-        elif var == 'streak':
-            connection.protocol.airstrike_streak_req = int(value)
-
 command_list = [
     help,
     pm,
@@ -418,8 +392,7 @@ command_list = [
     reset_game,
     rollmap,
     rollback,
-    rollbackcancel,
-    tweak
+    rollbackcancel
 ]
 
 commands = {}
@@ -433,13 +406,13 @@ def handle_command(connection, command, parameters):
         command_func = commands[command]
     except KeyError:
         return 'Invalid command'
-    try:
-        return command_func(connection, *parameters)
-    except TypeError:
-        return 'Invalid number of arguments for %s' % command
-    except InvalidPlayer:
-        return 'No such player'
-    except InvalidTeam:
-        return 'Invalid team specifier'
-    except ValueError:
-        return 'Invalid parameters'
+    #try:
+    return command_func(connection, *parameters)
+    #except TypeError:
+        #return 'Invalid number of arguments for %s' % command
+    #except InvalidPlayer:
+        #return 'No such player'
+    #except InvalidTeam:
+        #return 'Invalid team specifier'
+    #except ValueError:
+        #return 'Invalid parameters'

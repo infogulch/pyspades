@@ -357,7 +357,7 @@ class FeatureConnection(ServerConnection):
             fuse = self.protocol.map.get_height(x, y) * 0.036
             for i in xrange(5):
                 x += increment_x
-                time = round * 0.7 + i * 0.14
+                time = round * 0.9 + i * 0.14
                 reactor.callLater(time, self.desync_grenade, x, y, z,
                     orientation_x, fuse)
 
@@ -642,7 +642,7 @@ class FeatureProtocol(ServerProtocol):
     # rollback
     
     def start_rollback(self, connection, filename,
-                       start_x, start_y, end_x, end_y):
+                       start_x, start_y, end_x, end_y, z_offset):
         if self.rollback_in_progress:
             return 'Rollback in progress.'
         map = self.rollback_map if filename is None else Map(filename).data
@@ -654,7 +654,7 @@ class FeatureProtocol(ServerProtocol):
                 if player.admin:
                     break
         packet_generator = self.create_rollback_generator(connection,
-            self.map, map, start_x, start_y, end_x, end_y)
+            self.map, map, start_x, start_y, end_x, end_y, z_offset)
         self.rollbacking_player = connection
         self.rollback_in_progress = True
         self.rollback_start_time = time.time()
@@ -714,7 +714,7 @@ class FeatureProtocol(ServerProtocol):
             self.rollback_cycle, packet_generator)
     
     def create_rollback_generator(self, connection, mapdata, mapdata_new,
-                                  start_x, start_y, end_x, end_y):
+                                  start_x, start_y, end_x, end_y, z_offset):
         last_color = None
         for x in xrange(start_x, end_x):
             for y in xrange(start_y, end_y):
@@ -722,13 +722,13 @@ class FeatureProtocol(ServerProtocol):
                     packets_sent = 0
                     block_action.value = None
                     old_solid = mapdata.get_solid(x, y, z)
-                    new_solid = mapdata_new.get_solid(x, y, z)
+                    new_solid = mapdata_new.get_solid(x, y, z + z_offset)
                     if old_solid and not new_solid:
                         block_action.value = DESTROY_BLOCK
-                        mapdata.remove_point_unsafe(x, y, z, user = False)
+                        mapdata.remove_point_unsafe(x, y, z)
                     elif not old_solid and new_solid:
                         block_action.value = BUILD_BLOCK
-                        new_color = mapdata_new.get_color(x, y, z)
+                        new_color = mapdata_new.get_color(x, y, z + z_offset)
                         set_color.value = new_color & 0xFFFFFF
                         set_color.player_id = connection.player_id
                         if new_color != last_color:
@@ -747,9 +747,9 @@ class FeatureProtocol(ServerProtocol):
                         yield packets_sent
             yield 0
     
-    def on_reset_game(self):
+    def on_game_end(self, player):
         if self.rollback_on_game_end:
-            self.start_rollback(None, None, 0, 0, 512, 512)
+            self.start_rollback(None, None, 0, 0, 512, 512, 0)
     
     def send_chat(self, value, global_message = True, sender = None,
                   team = None, irc = False):

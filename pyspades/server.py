@@ -390,8 +390,8 @@ class ServerConnection(BaseConnection):
         self.add_score(10) # 10 points for intel
         if (self.protocol.max_score not in (0, None) and 
         self.team.score + 1 >= self.protocol.max_score):
-            self.reset_game()
-            self.on_game_end()
+            self.protocol.reset_game(self)
+            self.protocol.on_game_end(self)
         else:
             intel_action.action_type = 3
             intel_action.player_id = self.player_id
@@ -565,6 +565,9 @@ class ServerConnection(BaseConnection):
     
     def on_flag_capture(self):
         pass
+    
+    def on_game_end(self, player):
+        pass
 
 class Vertex3(object):
     def __init__(self, *arg, **kw):
@@ -676,7 +679,7 @@ class ServerProtocol(DatagramProtocol):
         self.blue_team.other = self.green_team
         self.green_team.other = self.blue_team
     
-    def reset_game(self):
+    def reset_game(self, player):
         blue_team = self.blue_team
         green_team = self.green_team
         blue_team.initialize()
@@ -690,7 +693,7 @@ class ServerProtocol(DatagramProtocol):
         intel_action.green_base_x = green_team.base.x
         intel_action.green_base_y = green_team.base.y
         intel_action.action_type = 3
-        intel_action.player_id = self.player_id
+        intel_action.player_id = player.player_id
         intel_action.game_end = True
         self.send_contained(intel_action, save = True)
         
