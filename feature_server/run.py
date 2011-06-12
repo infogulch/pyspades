@@ -205,7 +205,7 @@ class FeatureConnection(ServerConnection):
     
     def add_score(self, score):
         self.kills += score
-        if not self.protocol.airstrikes:
+        if self.protocol.airstrikes:
             score_met = (self.kills >= self.protocol.airstrike_min_score_req)
             streak_met = (self.streak >= self.protocol.airstrike_streak_req)
             give_strike = False
