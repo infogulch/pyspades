@@ -608,7 +608,7 @@ class Team(object):
         for x in xrange(x_offset, 128 + x_offset):
             for y in xrange(128, 384):
                 z = self.map.get_z(x, y)
-                if z < 62:
+                if z < 63:
                     spawns.append((x, y))
         self.initialize()
     

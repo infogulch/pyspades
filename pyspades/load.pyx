@@ -78,7 +78,9 @@ cdef class VXLData:
         if fp is not None:
             data = fp.read()
             c_data = data
-            self.map = load_vxl(c_data)
+        else:
+            c_data = NULL
+        self.map = load_vxl(c_data)
     
     def get_point(self, int x, int y, int z):
         return (get_solid(x, y, z, self.map), get_color_tuple(get_color(
@@ -121,6 +123,9 @@ cdef class VXLData:
         if taken > 0.1:
             print 'removing block at', x, y, z, 'took:', taken
     
+    def remove_point_unsafe(self, int x, int y, int z):
+        set_point(x, y, z, self.map, 0, 0)
+            
     cpdef bint has_neighbors(self, int x, int y, int z):
         return (
             self.get_solid(x + 1, y, z) or
@@ -165,7 +170,13 @@ cdef class VXLData:
         set_point(x, y, z, self.map, 1, color)
         return True
     
-    def set_point_nochecks(self, int x, int y, int z, int color):
+    cpdef bint set_point_unsafe(self, int x, int y, int z, tuple color_tuple):
+        r, g, b, a = color_tuple
+        cdef int color = make_color(r, g, b, a)
+        set_point(x, y, z, self.map, 1, color)
+        return True
+    
+    def set_point_unsafe_int(self, int x, int y, int z, int color):
         set_point(x, y, z, self.map, 1, color)
     
     def get_overview(self):
@@ -187,5 +198,8 @@ cdef class VXLData:
         return save_vxl(self.map)
     
     def __dealloc__(self):
+        cdef MapData * map
         if self.map != NULL:
-            delete_vxl(self.map)
+            map = self.map
+            self.map = NULL
+            delete_vxl(map)

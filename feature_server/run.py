@@ -725,8 +725,7 @@ class FeatureProtocol(ServerProtocol):
                     new_solid = mapdata_new.get_solid(x, y, z)
                     if old_solid and not new_solid:
                         block_action.value = DESTROY_BLOCK
-                        mapdata.remove_point(x, y, z,
-                            user = False, no_collapse = True)
+                        mapdata.remove_point_unsafe(x, y, z, user = False)
                     elif not old_solid and new_solid:
                         block_action.value = BUILD_BLOCK
                         new_color = mapdata_new.get_color(x, y, z)
@@ -738,7 +737,7 @@ class FeatureProtocol(ServerProtocol):
                             packets_sent += 1
                         else:
                             connection.send_contained(set_color, save = True)
-                        mapdata.set_point_nochecks(x, y, z, new_color)
+                        mapdata.set_point_unsafe_int(x, y, z, new_color)
                     
                     if block_action.value is not None:
                         block_action.x = x
