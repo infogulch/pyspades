@@ -735,8 +735,6 @@ class FeatureProtocol(ServerProtocol):
                             last_color = new_color
                             self.send_contained(set_color, save = True)
                             packets_sent += 1
-                        else:
-                            connection.send_contained(set_color, save = True)
                         mapdata.set_point_unsafe_int(x, y, z, new_color)
                     
                     if block_action.value is not None:
