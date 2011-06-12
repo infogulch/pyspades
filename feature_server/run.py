@@ -750,9 +750,8 @@ class FeatureProtocol(ServerProtocol):
             yield 0
     
     def on_reset_game(self):
-        if not self.rollback_on_game_end:
-            return
-        self.start_rollback(self.players[0], None, 0, 0, 512, 512)
+        if self.rollback_on_game_end:
+            self.start_rollback(None, None, 0, 0, 512, 512)
     
     def send_chat(self, value, global_message = True, sender = None,
                   team = None, irc = False):

@@ -41,7 +41,7 @@
     }, 
     "server_prefix" : "[*]",
     "user_blocks_only" : false,
-    "rollback_on_game_end" : true,
+    "rollback_on_game_end" : false,
     "logfile" : "log.txt",
     "balanced_teams" : 1,
     "login_retries" : 3,
