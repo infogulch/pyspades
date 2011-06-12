@@ -16,7 +16,6 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 import inspect
-import random
 import time
 from twisted.internet import reactor
 
@@ -133,9 +132,12 @@ def help(connection):
     """
     This help
     """
-    names = [command.func_name for command in command_list
-        if hasattr(command, 'admin') in (connection.admin, False)]
-    return 'Available commands: %s' % (', '.join(names))
+    if connection.protocol.help is not None:
+        connection.send_lines(connection.protocol.help)
+    else:
+        names = [command.func_name for command in command_list
+            if hasattr(command, 'admin') in (connection.admin, False)]
+        return 'Available commands: %s' % (', '.join(names))
 
 def login(connection, password):
     """

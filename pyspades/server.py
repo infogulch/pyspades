@@ -476,6 +476,7 @@ class ServerConnection(BaseConnection):
             self.send_contained(hit_packet)
     
     def kill(self, by = None):
+        self.on_kill(by)
         if self.hp is None:
             return
         self.hp = None
@@ -491,7 +492,6 @@ class ServerConnection(BaseConnection):
             if by is not None:
                 by.add_score(1)
             sender = None
-        self.on_kill(by)
         self.protocol.send_contained(kill_action, sender = sender, save = True)
         self.respawn()
     

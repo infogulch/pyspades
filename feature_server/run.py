@@ -200,22 +200,30 @@ class FeatureConnection(ServerConnection):
             return
         killer.streak += 1
         killer.best_streak = max(killer.streak, killer.best_streak)
-        if killer.protocol.airstrikes:
-            if killer.streak % killer.protocol.airstrike_streak_req == 0:
-                killer.send_chat('Airstrike support ready! Launch with e.g. '
-                                 '/airstrike B4')
-                killer.airstrike = True
-                intel_action.action_type = 4
-                killer.send_contained(intel_action)
     
     def add_score(self, score):
-        if self.protocol.airstrikes:
-            if (self.kills < self.protocol.airstrike_min_score_req and
-                self.kills + score >= self.protocol.airstrike_min_score_req):
+        self.kills += score
+        if not self.protocol.airstrikes:
+            score_met = (self.kills >= self.protocol.airstrike_min_score_req)
+            streak_met = (self.streak >= self.protocol.airstrike_streak_req)
+            give_strike = False
+            if not score_met:
+                return
+            if self.kills - score < self.protocol.airstrike_min_score_req:
                 self.send_chat('You have unlocked airstrike support!')
                 self.send_chat('Each 10-kill streak will clear you for one '
                                'airstrike.')
-        self.kills += score
+                if streak_met:
+                    give_strike = True
+            if not streak_met:
+                return
+            if (self.streak % self.protocol.airstrike_streak_req == 0 or
+                give_strike):
+                self.send_chat('Airstrike support ready! Launch with e.g. '
+                                 '/airstrike B4')
+                self.airstrike = True
+                intel_action.action_type = 4
+                self.send_contained(intel_action)
     
     def get_followers(self):
         return [player for player in self.protocol.players.values()
@@ -269,13 +277,12 @@ class FeatureConnection(ServerConnection):
         position_data.player_id = self.player_id
         self.protocol.send_contained(position_data)
     
-    def desync_grenade(self, x, y, z, fuse):
+    def desync_grenade(self, x, y, z, orientation_x, fuse):
         """Gives the appearance of a grenade appearing from thin air by moving
         an auxiliary player to the target location and then back"""
         new_position = PositionData()
         new_position.set((x, y, z), self.player_id)
-        orientation_data.set(([1.0, -1.0][self.team.id], 0.0, 0.0),
-            self.player_id)
+        orientation_data.set((orientation_x, 0.0, 0.0), self.player_id)
         grenade_packet.value = fuse
         grenade_packet.player_id = self.player_id
         old_position = PositionData()
@@ -328,21 +335,24 @@ class FeatureConnection(ServerConnection):
         self.protocol.send_chat('Ally %s called in an airstrike on '
             'location %s' % (self.name, value.upper()), global_message = False,
             team = self.team)
-        self.protocol.send_chat('[WARNING] Enemy airstrike headed to %s!' %
+        self.protocol.send_chat('[WARNING] Enemy air support heading to %s!' %
             value.upper(), global_message = False, team = self.team.other)
         reactor.callLater(3.0, self.do_airstrike, x, y)
     
     def do_airstrike(self, start_x, start_y):
         z = 1
         self.aux = self.find_aux_connection()
-        for round in xrange(7):
+        orientation_x = [1.0, -1.0][self.team.id]
+        start_x += max(0, min(512, [-38, 38][self.team.id]))
+        for round in xrange(8):
             x = start_x + random.randrange(64)
             y = start_y + random.randrange(64)
             fuse = self.protocol.map.get_height(x, y) * 0.038
             for i in xrange(5):
                 x += 6
                 time = round * 1.1 + i * 0.16
-                reactor.callLater(time, self.desync_grenade, x, y, z, fuse)
+                reactor.callLater(time, self.desync_grenade, x, y, z,
+                    orientation_x, fuse)
 
 def encode_lines(value):
     if value is not None:
@@ -382,9 +392,9 @@ class FeatureProtocol(ServerProtocol):
     # rollback
     rollback_in_progress = False
     rollback_max_rows = 10 # per 'cycle', intended to cap cpu usage
-    rollback_max_packets = 300 # per 'cycle' cap for (unique packets * players)
-    rollback_max_unique_packets = 18 # per 'cycle', each block op is at least 1
-    rollback_time_between_cycles = 0.05
+    rollback_max_packets = 180 # per 'cycle' cap for (unique packets * players)
+    rollback_max_unique_packets = 12 # per 'cycle', each block op is at least 1
+    rollback_time_between_cycles = 0.06
     rollback_time_between_progress_updates = 10.0
     rollbacking_player = None
     rollback_map = None
@@ -399,8 +409,8 @@ class FeatureProtocol(ServerProtocol):
     
     # airstrike
     airstrikes = True
-    airstrike_min_score_req = 20
-    airstrike_streak_req = 8
+    airstrike_min_score_req = 15
+    airstrike_streak_req = 6
     
     map_info = None
     indestructable_blocks = None
@@ -446,6 +456,11 @@ class FeatureProtocol(ServerProtocol):
         self.master = config.get('master', True)
         self.friendly_fire = config.get('friendly_fire', True)
         self.motd = self.format_lines(config.get('motd', None))
+        self.help = self.format_lines(config.get('help', None))
+        self.tips = self.format_lines(config.get('tips', None))
+        self.tip_frequency = config.get('tip_frequency', 0)
+        if self.tips is not None and self.tip_frequency > 0:
+            reactor.callLater(self.tip_frequency * 60, self.send_tip)
         self.max_players = config.get('max_players', 20)
         passwords = config.get('passwords', {})
         self.admin_passwords = passwords.get('admin', [])
@@ -536,6 +551,11 @@ class FeatureProtocol(ServerProtocol):
     def irc_say(self, msg):
         if self.irc_relay:
             self.irc_relay.send(msg)
+    
+    def send_tip(self):
+        line = self.tips[random.randrange(len(self.tips))]
+        self.send_chat(line)
+        reactor.callLater(self.tip_frequency * 60, self.send_tip)
     
     # votekick
     
