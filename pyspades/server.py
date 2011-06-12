@@ -380,27 +380,6 @@ class ServerConnection(BaseConnection):
         self.grenades = 2
         self.protocol.send_contained(create_player, save = True)
         self.on_spawn(pos, name)
-
-    def reset_game(self):
-        blue_team = self.protocol.blue_team
-        green_team = self.protocol.green_team
-        blue_team.initialize()
-        green_team.initialize()
-        blue_team = self.protocol.blue_team
-        green_team = self.protocol.green_team
-        intel_action.blue_flag_x = blue_team.flag.x
-        intel_action.blue_flag_y = blue_team.flag.y
-        intel_action.blue_base_x = blue_team.base.x
-        intel_action.blue_base_y = blue_team.base.y
-        intel_action.green_flag_x = green_team.flag.x
-        intel_action.green_flag_y = green_team.flag.y
-        intel_action.green_base_x = green_team.base.x
-        intel_action.green_base_y = green_team.base.y
-        self.protocol.reset_game()
-        intel_action.action_type = 3
-        intel_action.player_id = self.player_id
-        intel_action.game_end = True
-        self.protocol.send_contained(intel_action, save = True)
     
     def capture_flag(self):
         other_team = self.team.other
@@ -412,6 +391,7 @@ class ServerConnection(BaseConnection):
         if (self.protocol.max_score not in (0, None) and 
         self.team.score + 1 >= self.protocol.max_score):
             self.reset_game()
+            self.on_game_end()
         else:
             intel_action.action_type = 3
             intel_action.player_id = self.player_id
@@ -697,6 +677,23 @@ class ServerProtocol(DatagramProtocol):
         self.green_team.other = self.blue_team
     
     def reset_game(self):
+        blue_team = self.blue_team
+        green_team = self.green_team
+        blue_team.initialize()
+        green_team.initialize()
+        intel_action.blue_flag_x = blue_team.flag.x
+        intel_action.blue_flag_y = blue_team.flag.y
+        intel_action.blue_base_x = blue_team.base.x
+        intel_action.blue_base_y = blue_team.base.y
+        intel_action.green_flag_x = green_team.flag.x
+        intel_action.green_flag_y = green_team.flag.y
+        intel_action.green_base_x = green_team.base.x
+        intel_action.green_base_y = green_team.base.y
+        intel_action.action_type = 3
+        intel_action.player_id = self.player_id
+        intel_action.game_end = True
+        self.send_contained(intel_action, save = True)
+        
         for player in self.players.values():
             if player.name is not None:
                 player.spawn()

@@ -331,7 +331,7 @@ def god(connection, value = None):
 
 @admin
 def reset_game(connection):
-    connection.reset_game()
+    connection.protocol.reset_game()
     connection.protocol.send_chat('Game has been reset by %s' % connection.name,
         irc = True)
 

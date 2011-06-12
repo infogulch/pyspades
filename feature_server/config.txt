@@ -11,9 +11,9 @@
         "/AIRSTRIKE Air support!  Try it out just like that for more details"
     ],
     "tips" : [
-        "Here you can deploy airstrikes, form squads and more.  Type /help for info!"
+        "Here you can deploy airstrikes, form squads and more!  Type /help for info."
     ],
-    "tip_frequency" = 5,
+    "tip_frequency" : 5,
     "rules" : [
         "No griefing, no bad words, etc."
     ],
@@ -41,6 +41,7 @@
     }, 
     "server_prefix" : "[*]",
     "user_blocks_only" : false,
+    "rollback_on_game_end" : true,
     "logfile" : "log.txt",
     "balanced_teams" : 1,
     "login_retries" : 3,
