@@ -132,7 +132,7 @@ def help(connection):
     """
     This help
     """
-    if connection.protocol.help is not None:
+    if connection.protocol.help is not None and not connection.god:
         connection.send_lines(connection.protocol.help)
     else:
         names = [command.func_name for command in command_list
@@ -338,8 +338,9 @@ def god(connection, value = None):
         message = '%s returned to being a mere human.' % connection.name
     connection.protocol.send_chat(message, irc = True)
 
+@name ('resetgame')
 @admin
-def resetgame(connection):
+def reset_game(connection):
     connection.protocol.reset_game(connection)
     connection.protocol.send_chat('Game has been reset by %s' % connection.name,
         irc = True)
@@ -367,7 +368,7 @@ def rollback(connection, value = None):
 @admin
 def rollbackcancel(connection):
     return connection.protocol.cancel_rollback(connection)
-    
+
 command_list = [
     help,
     pm,
@@ -398,10 +399,11 @@ command_list = [
     no_follow,
     airstrike,
     streak,
-    resetgame,
+    reset_game,
     rollmap,
     rollback,
-    rollbackcancel
+    rollbackcancel,
+    tweak
 ]
 
 commands = {}

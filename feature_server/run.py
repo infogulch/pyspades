@@ -341,8 +341,8 @@ class FeatureConnection(ServerConnection):
             return 'Airstrike support ready! Use with e.g. /airstrike A1'
         if not self.god:
             if self.kills < score_req:
-                return ('You need a total score of %s to unlock airstrikes!' %
-                    score_req)
+                return ('You need a total score of %s (kills and intel) to '
+                        'unlock airstrikes!' % score_req)
             elif not self.airstrike:
                 kills_left = streak_req - (self.streak % streak_req)
                 return ('Every %s consecutive kills (without dying) you get an '
@@ -356,7 +356,7 @@ class FeatureConnection(ServerConnection):
             reactor.seconds() - self.team.last_airstrike < interval):
             remain = interval - (reactor.seconds() - self.team.last_airstrike)
             return ('Your must wait %s seconds until your team can launch '
-                    'another airstrike' % int(remain))
+                    'another airstrike.' % int(remain))
         self.team.last_airstrike = reactor.seconds()
         
         self.airstrike = False
@@ -365,18 +365,20 @@ class FeatureConnection(ServerConnection):
             team = self.team)
         self.protocol.send_chat('[WARNING] Enemy air support heading to %s!' %
             value.upper(), global_message = False, team = self.team.other)
-        reactor.callLater(3.0, self.do_airstrike, x, y)
+        reactor.callLater(2.5, self.do_airstrike, x, y)
     
     def do_airstrike(self, start_x, start_y):
         z = 1
         self.aux = self.find_aux_connection()
         orientation_x = [1.0, -1.0][self.team.id]
         start_x = max(0, min(512, start_x + [-64, 64][self.team.id]))
+        range_x = [61, -61][self.team.id]
         increment_x = [5, -5][self.team.id]
+        del self.team.last_airstrike
         for round in xrange(12):
             x = start_x + random.randrange(64)
             y = start_y + random.randrange(64)
-            fuse = self.protocol.map.get_height(x, y) * 0.036
+            fuse = self.protocol.map.get_height(x + range_x, y) * 0.033
             for i in xrange(5):
                 x += increment_x
                 time = round * 0.9 + i * 0.14
