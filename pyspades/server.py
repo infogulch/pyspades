@@ -211,11 +211,10 @@ class ServerConnection(BaseConnection):
                         position_data.player_id = self.player_id
                         other_flag = self.team.other.flag
                         if vector_collision(self.position, self.team.base):
-                            self.refill()
                             if other_flag.player is self:
-                                if self.on_flag_capture() == False:
-                                    return
                                 self.capture_flag()
+                            if self.on_refill() != False:
+                                self.refill()
                         if other_flag.player is None and vector_collision(
                         self.position, other_flag):
                             self.take_flag()
@@ -551,6 +550,9 @@ class ServerConnection(BaseConnection):
     def on_team_join(self, team):
         pass
     
+    def on_refill(self):
+        pass
+    
     def on_grenade(self, time_left):
         pass
     
@@ -561,9 +563,6 @@ class ServerConnection(BaseConnection):
         pass
     
     def on_block_color(self, color):
-        pass
-    
-    def on_flag_capture(self):
         pass
     
     def on_game_end(self, player):

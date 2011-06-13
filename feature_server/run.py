@@ -71,6 +71,7 @@ def writelines(fp, lines):
 class FeatureConnection(ServerConnection):
     admin = False
     last_votekick = None
+    last_refill = None
     mute = False
     login_retries = None
     god = False
@@ -157,7 +158,7 @@ class FeatureConnection(ServerConnection):
                 player.name)
             return False
         if self.god:
-            self.protocol.send_chat("%s, killing in god mode is forbidden!" %
+            self.protocol.send_chat('%s, killing in god mode is forbidden!' %
                 self.name, irc = True)
             self.protocol.send_chat('%s returned to being a mere human.' %
                 self.name, irc = True)
@@ -184,6 +185,13 @@ class FeatureConnection(ServerConnection):
             self.follow = None
             self.respawn_time = self.protocol.respawn_time
     
+    def on_refill(self):
+        last_refill = self.last_refill
+        if (last_refill is not None and 
+            reactor.seconds() - last_refill < self.protocol.refill_interval):
+            return False
+        self.last_refill = reactor.seconds()
+    
     def on_chat(self, value, global_message):
         message = '<%s> %s' % (self.name, value)
         if self.mute:
@@ -206,26 +214,26 @@ class FeatureConnection(ServerConnection):
     def add_score(self, score):
         self.kills += score
         if self.protocol.airstrikes:
-            score_met = (self.kills >= self.protocol.airstrike_min_score_req)
-            streak_met = (self.streak >= self.protocol.airstrike_streak_req)
+            score_req = self.protocol.airstrike_min_score_req
+            streak_req = self.protocol.airstrike_streak_req
+            score_met = (self.kills >= score_req)
+            streak_met = (self.streak >= streak_req)
             give_strike = False
             if not score_met:
                 return
-            if self.kills - score < self.protocol.airstrike_min_score_req:
+            if self.kills - score < score_req:
                 self.send_chat('You have unlocked airstrike support!')
-                self.send_chat('Each 10-kill streak will clear you for one '
-                               'airstrike.')
+                self.send_chat('Each %s-kill streak will clear you for one '
+                               'airstrike.' % streak_req)
                 if streak_met:
                     give_strike = True
             if not streak_met:
                 return
-            if (self.streak % self.protocol.airstrike_streak_req == 0 or
-                give_strike):
+            if (self.streak % streak_req == 0 or give_strike):
                 self.send_chat('Airstrike support ready! Launch with e.g. '
-                                 '/airstrike B4')
+                               '/airstrike B4')
                 self.airstrike = True
-                intel_action.action_type = 4
-                self.send_contained(intel_action)
+                self.refill()
     
     def get_followers(self):
         return [player for player in self.protocol.players.values()
@@ -295,6 +303,7 @@ class FeatureConnection(ServerConnection):
         if self.aux is not self:
             for packet in packets:
                 self.protocol.send_contained(packet, sender = self)
+            old_position.set(self.aux.get_location(), self.aux.player_id)
             for packet in packets:
                 packet.player_id = self.aux.player_id
                 self.protocol.send_contained(packet, target = self)
@@ -308,6 +317,8 @@ class FeatureConnection(ServerConnection):
         best = None
         best_distance = 0.0
         for player in self.team.get_players():
+            if player is self:
+                continue
             distance = distance_3d_vector(self.position, player.position)
             if best is None or player.hp <= 0 and best.hp > 0:
                 best, best_distance = player, distance
@@ -316,27 +327,38 @@ class FeatureConnection(ServerConnection):
                 continue
             if distance > best_distance:
                 best, best_distance = player, distance
+        if best is None:
+            best = self
         return best
     
     # airstrike
     
     def start_airstrike(self, value = None):
-        if not self.protocol.airstrikes:
-            return
+        score_req = self.protocol.airstrike_min_score_req
+        streak_req = self.protocol.airstrike_streak_req
+        interval = self.protocol.airstrike_interval
         if value is None and (self.god or self.airstrike):
             return 'Airstrike support ready! Use with e.g. /airstrike A1'
         if not self.god:
-            if self.kills < self.protocol.airstrike_min_score_req:
+            if self.kills < score_req:
                 return ('You need a total score of %s to unlock airstrikes!' %
-                    self.protocol.airstrike_min_score_req)
+                    score_req)
             elif not self.airstrike:
-                kills_left = self.protocol.airstrike_streak_req - (self.streak %
-                    self.protocol.airstrike_streak_req)
-                return ('%s kills left for airstrike clearance!' % kills_left)
+                kills_left = streak_req - (self.streak % streak_req)
+                return ('Every %s consecutive kills (without dying) you get an '
+                        'airstrike. %s kills to go!' % (streak_req, kills_left))
         try:
             x, y = coordinates(value)
         except (ValueError):
-            return "Bad coordinates: should be like 'A4', 'G5'. Look them up in the map."
+            return ("Bad coordinates: should be like 'A4', 'G5'. Look them up "
+                    "in the map.")
+        if (hasattr(self.team, 'last_airstrike') and 
+            reactor.seconds() - self.team.last_airstrike < interval):
+            remain = interval - (reactor.seconds() - self.team.last_airstrike)
+            return ('Your must wait %s seconds until your team can launch '
+                    'another airstrike' % int(remain))
+        self.team.last_airstrike = reactor.seconds()
+        
         self.airstrike = False
         self.protocol.send_chat('Ally %s called in an airstrike on '
             'location %s' % (self.name, value.upper()), global_message = False,
@@ -385,6 +407,7 @@ class FeatureProtocol(ServerProtocol):
     building = True
     killing = True
     remote_console = None
+    refill_interval = 30
     
     # votekick
     votekick_time = 60 # 1 minute
@@ -409,15 +432,12 @@ class FeatureProtocol(ServerProtocol):
     rollback_last_chat = None
     rollback_rows = None
     rollback_total_rows = None
-    # debug
-    rollback_hit_max_rows = None
-    rollback_hit_max_unique_packets = None
-    rollback_hit_max_packets = None
     
     # airstrike
     airstrikes = True
     airstrike_min_score_req = 15
     airstrike_streak_req = 6
+    airstrike_interval = 20
     
     map_info = None
     indestructable_blocks = None
@@ -661,9 +681,6 @@ class FeatureProtocol(ServerProtocol):
         self.rollback_last_chat = self.rollback_start_time
         self.rollback_rows = 0
         self.rollback_total_rows = end_x - start_x
-        self.rollback_hit_max_rows = 0
-        self.rollback_hit_max_unique_packets = 0
-        self.rollback_hit_max_packets = 0
         self.rollback_cycle(packet_generator)
     
     def cancel_rollback(self, connection):
@@ -675,9 +692,6 @@ class FeatureProtocol(ServerProtocol):
         self.rollback_in_progress = False
         self.update_entities()
         self.send_chat('Rollback ended. %s' % result, irc = True)
-        self.send_chat('Caps hit: Rows %s, Packets %s, Unique %s' %
-            (self.rollback_hit_max_rows, self.rollback_hit_max_packets,
-            self.rollback_hit_max_unique_packets))
     
     def rollback_cycle(self, packet_generator):
         if not self.rollback_in_progress:
@@ -686,13 +700,10 @@ class FeatureProtocol(ServerProtocol):
             sent = rows = 0
             while (True):
                 if rows > self.rollback_max_rows:
-                    self.rollback_hit_max_rows += 1
                     break
                 if sent > self.rollback_max_unique_packets:
-                    self.rollback_hit_max_unique_packets += 1
                     break
                 if sent * len(self.connections) > self.rollback_max_packets:
-                    self.rollback_hit_max_packets += 1
                     break
                 
                 sent_packets = packet_generator.next()
@@ -704,8 +715,7 @@ class FeatureProtocol(ServerProtocol):
                 self.rollback_last_chat = time.time()
                 progress = (float(self.rollback_rows) /
                     self.rollback_total_rows * 100.0)
-                self.send_chat('Rollback progress %s%%' % int(progress),
-                    irc = True)
+                self.send_chat('Rollback progress %s%%' % int(progress))
         except (StopIteration):
             self.end_rollback('Time taken: %.2fs' % 
                 float(time.time() - self.rollback_start_time))

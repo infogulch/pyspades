@@ -168,6 +168,8 @@ def pm(connection, value, *arg):
 def follow(connection, player = None):
     """Follow a player; on your next spawn, you'll spawn at their position,
         similar to the squad spawning feature of Battlefield."""
+    if not connection.protocol.max_followers:
+        return
     if player is None:
         if connection.follow is None:
             return ("You aren't following anybody. To follow a player say "
@@ -198,6 +200,8 @@ def follow(connection, player = None):
 
 @name('nofollow')
 def no_follow(connection):
+    if not connection.protocol.max_followers:
+        return
     connection.followable = not connection.followable
     if not connection.followable:
         connection.drop_followers()
@@ -205,6 +209,8 @@ def no_follow(connection):
         'now' if connection.followable else 'no longer')
 
 def airstrike(connection, value = None):
+    if not connection.protocol.airstrikes:
+        return
     return connection.start_airstrike(value)
 
 def streak(connection):
@@ -231,6 +237,9 @@ def unlock(connection, value):
 def switch(connection, value = None):
     if value is not None:
         connection = get_player(connection.protocol, value)
+    connection.follow = None
+    connection.drop_followers()
+    connection.respawn_time = self.protocol.respawn_time
     connection.team = connection.team.other
     connection.kill()
     connection.protocol.send_chat('%s has switched teams' % connection.name)
@@ -330,7 +339,7 @@ def god(connection, value = None):
     connection.protocol.send_chat(message, irc = True)
 
 @admin
-def reset_game(connection):
+def reset(connection):
     connection.protocol.reset_game(connection)
     connection.protocol.send_chat('Game has been reset by %s' % connection.name,
         irc = True)
@@ -355,6 +364,7 @@ def rollmap(connection, filename = None, first_arg = None, second_arg = None):
 def rollback(connection, value = None):
     return rollmap(connection, first_arg = value)
 
+@name('reset')
 @admin
 def rollbackcancel(connection):
     return connection.protocol.cancel_rollback(connection)
@@ -389,7 +399,7 @@ command_list = [
     no_follow,
     airstrike,
     streak,
-    reset_game,
+    reset,
     rollmap,
     rollback,
     rollbackcancel
@@ -406,13 +416,13 @@ def handle_command(connection, command, parameters):
         command_func = commands[command]
     except KeyError:
         return 'Invalid command'
-    #try:
-    return command_func(connection, *parameters)
-    #except TypeError:
-        #return 'Invalid number of arguments for %s' % command
-    #except InvalidPlayer:
-        #return 'No such player'
-    #except InvalidTeam:
-        #return 'Invalid team specifier'
-    #except ValueError:
-        #return 'Invalid parameters'
+    try:
+        return command_func(connection, *parameters)
+    except TypeError:
+        return 'Invalid number of arguments for %s' % command
+    except InvalidPlayer:
+        return 'No such player'
+    except InvalidTeam:
+        return 'Invalid team specifier'
+    except ValueError:
+        return 'Invalid parameters'
