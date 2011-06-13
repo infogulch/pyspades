@@ -403,7 +403,6 @@ command_list = [
     rollmap,
     rollback,
     rollbackcancel,
-    tweak
 ]
 
 commands = {}
