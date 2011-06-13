@@ -355,7 +355,7 @@ class FeatureConnection(ServerConnection):
         if (hasattr(self.team, 'last_airstrike') and 
             reactor.seconds() - self.team.last_airstrike < interval):
             remain = interval - (reactor.seconds() - self.team.last_airstrike)
-            return ('Your must wait %s seconds until your team can launch '
+            return ('You must wait %s seconds before your team can launch '
                     'another airstrike.' % int(remain))
         self.team.last_airstrike = reactor.seconds()
         
