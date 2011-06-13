@@ -239,7 +239,7 @@ def switch(connection, value = None):
         connection = get_player(connection.protocol, value)
     connection.follow = None
     connection.drop_followers()
-    connection.respawn_time = self.protocol.respawn_time
+    connection.respawn_time = connection.protocol.respawn_time
     connection.team = connection.team.other
     connection.kill()
     connection.protocol.send_chat('%s has switched teams' % connection.name)
