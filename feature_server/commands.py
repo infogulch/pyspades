@@ -339,7 +339,7 @@ def god(connection, value = None):
     connection.protocol.send_chat(message, irc = True)
 
 @admin
-def reset(connection):
+def resetgame(connection):
     connection.protocol.reset_game(connection)
     connection.protocol.send_chat('Game has been reset by %s' % connection.name,
         irc = True)
@@ -364,7 +364,6 @@ def rollmap(connection, filename = None, first_arg = None, second_arg = None):
 def rollback(connection, value = None):
     return rollmap(connection, first_arg = value)
 
-@name('reset')
 @admin
 def rollbackcancel(connection):
     return connection.protocol.cancel_rollback(connection)
@@ -399,7 +398,7 @@ command_list = [
     no_follow,
     airstrike,
     streak,
-    reset,
+    resetgame,
     rollmap,
     rollback,
     rollbackcancel
