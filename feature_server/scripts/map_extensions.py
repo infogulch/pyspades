@@ -21,6 +21,7 @@ def apply_script(protocol, connection, config):
             if self.hp > 100: # limit health gains
                 self.hp = 100
             hit_packet.hp = self.hp
+            hit_packet.sound = True
             self.send_contained(hit_packet)
 
     return protocol, MapExtensionConnection

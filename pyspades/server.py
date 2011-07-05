@@ -77,15 +77,11 @@ class ServerConnection(BaseConnection):
     last_refill = None
     last_block_destroy = None
     speedhack_detect = False
-    
-    speed_limit_grace = 5
-    movement_timestamp = 0.0
-    
     up = down = left = right = False
     position = orientation = None
     fire = jump = aim = crouch = None
-    
     timers = None
+    last_ground_z = None
     
     def __init__(self, protocol, address):
         BaseConnection.__init__(self)
@@ -201,11 +197,6 @@ class ServerConnection(BaseConnection):
         if self.player_id is not None:
             if loader.id in (SizedData.id, SizedSequenceData.id):
                 contained = load_client_packet(loader.data)
-                #if contained.id not in (clientloaders.OrientationData.id,
-                    #clientloaders.MovementData.id, clientloaders.AnimationData.id,
-                    #clientloaders.PositionData.id):
-                    #print contained
-                    #print '    ', hexify(loader.data)
                 if contained.id == clientloaders.JoinTeam.id:
                     if contained.name is None and contained.weapon != -1:
                         self.weapon = contained.weapon
@@ -248,7 +239,14 @@ class ServerConnection(BaseConnection):
                     elif contained.id == clientloaders.PositionData.id:
                         if not self.hp:
                             return
-                        self.update_position(contained)
+                        self.position.set(contained.x, contained.y, contained.z)
+                        position_data.player_id = self.player_id
+                        position_data.x = contained.x
+                        position_data.y = contained.y
+                        position_data.z = contained.z
+                        self.protocol.send_contained(position_data, 
+                            sender = self)
+                        self.on_update_position()
                         other_flag = self.team.other.flag
                         if vector_collision(self.position, self.team.base):
                             if other_flag.player is self:
@@ -328,7 +326,7 @@ class ServerConnection(BaseConnection):
                         return
                     value = contained.value
                     if value.startswith('/'):
-                        value = value[1:]
+                        value = encode(value[1:])
                         try:
                             splitted = shlex.split(value)
                         except ValueError:
@@ -338,6 +336,7 @@ class ServerConnection(BaseConnection):
                             command = splitted.pop(0)
                         else:
                             command = ''
+                        splitted = [decode(value) for value in splitted]
                         self.on_command(command, splitted)
                     else:
                         global_message = contained.global_message
@@ -361,9 +360,9 @@ class ServerConnection(BaseConnection):
                     y = contained.y
                     z = contained.z
                     if value == BUILD_BLOCK:
-                        #if not self.blocks:
-                            #self.on_hack_attempt('Block hack detected')
-                            #return
+                        # if not self.blocks:
+                            # self.on_hack_attempt('Block hack detected')
+                            # return
                         self.blocks -= 1
                         if self.on_block_build_attempt(x, y, z) == False:
                             return
@@ -406,15 +405,17 @@ class ServerConnection(BaseConnection):
         sequence = self.orientation_sequence
         self.orientation_sequence = (sequence + 1) & 0xFFFF
         return sequence
-
-    def update_position(self, contained):
-        self.position.set(contained.x, contained.y, contained.z)
-        position_data.player_id = self.player_id
-        position_data.x = contained.x
-        position_data.y = contained.y
-        position_data.z = contained.z
-        self.protocol.send_contained(position_data, sender = self)
-        self.on_update_position()
+    
+    def get_ground_z(self):
+        if self.crouch:
+            return int(self.position.z + 2)
+        else:
+            return int(self.position.z + 3)
+    
+    def on_ground(self):
+        position = self.position
+        return self.protocol.map.get_solid(int(position.x), int(position.y), 
+            self.get_ground_z())
     
     def refill(self):
         self.hp = 100
@@ -535,6 +536,7 @@ class ServerConnection(BaseConnection):
             return
         if by is not None:
             hit_packet.hp = self.hp
+            hit_packet.sound = True
             self.send_contained(hit_packet)
     
     def kill(self, by = None):
@@ -543,6 +545,7 @@ class ServerConnection(BaseConnection):
         self.on_kill(by)
         self.hp = None
         self.drop_flag()
+        kill_action.other_kill = True
         if by is None:
             kill_action.player1 = self.player_id
         else:
@@ -596,15 +599,18 @@ class ServerConnection(BaseConnection):
     def send_data(self, data):
         self.protocol.transport.write(data, self.address)
     
-    def send_chat(self, value, global_message = True):
-        chat_message.global_message = global_message
-        # 32 is guaranteed to be out of range!
-        chat_message.player_id = 32
-        prefix = self.protocol.server_prefix
+    def send_chat(self, value, global_message = None):
+        if global_message is None:
+            chat_message.player_id = -1
+            prefix = ''
+        else:
+            chat_message.global_message = global_message
+            # 32 is guaranteed to be out of range!
+            chat_message.player_id = 32
+            prefix = self.protocol.server_prefix + ' '
         lines = textwrap.wrap(value, MAX_CHAT_SIZE - len(prefix) - 1)
         for line in lines:
-            chat_message.value = '%s %s' % (self.protocol.server_prefix, 
-                line)
+            chat_message.value = '%s%s' % (prefix, line)
             self.send_contained(chat_message)
     
     def timer_received(self, value):
@@ -694,11 +700,6 @@ class Vertex3(object):
 class Flag(Vertex3):
     player = None
     team = None
-
-spawn_positions = []
-for x in xrange(128):
-    for y in xrange(128, 384):
-        spawn_positions.append((x, y))
 
 class Team(object):
     score = None
@@ -899,7 +900,7 @@ class ServerProtocol(DatagramProtocol):
             else:
                 player.send_loader(loader, not sequence)
     
-    def send_chat(self, value, global_message = True, sender = None,
+    def send_chat(self, value, global_message = None, sender = None,
                   team = None):
         for player in self.players.values():
             if player is sender:
