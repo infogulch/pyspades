@@ -39,7 +39,6 @@
     "votekick_ban_duration" : 15,
     "votekick_public_votes" : true,
     "default_ban_duration" : 1440,
-    "speedhack_detect" : true,
     "network_interface" : "",
     "passwords" : {
         "admin" : ["replaceme"],

@@ -66,9 +66,9 @@ def prettify_timespan(total):
     if days > 1: days_s += 's'
     if hours > 1: hours_s += 's'
     if minutes > 1: minutes_s += 's'
-    text = ', '.join([s for s in (days_s, hours_s, minutes_s) if s])
+    text = ', '.join([s for s in days_s, hours_s, minutes_s if s])
     return text
-
+    
 def compare_reader(reader, value, name):
     if reader.read(len(value)) != value:
         print '%s is wrong' % name
@@ -97,18 +97,19 @@ def decode(value):
     if value is not None:
         return value.decode('cp437', 'replace')
 
-cdef class Vertex3:
+class Vertex3(object):
+    x = y = z = 0.0
     def __init__(self, *arg):
         if arg:
             self.set(*arg)
     
-    cpdef get(self):
+    def get(self):
         return self.x, self.y, self.z
     
-    cpdef set(self, double x, double y, double z):
+    def set(self, x, y, z):
         self.x = x
         self.y = y
         self.z = z
     
-    cpdef set_vector(self, Vertex3 vector):
+    def set_vector(self, vector):
         self.set(vector.x, vector.y, vector.z)
