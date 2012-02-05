@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -16,8 +16,6 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 from pyspades.common import *
-from pyspades.common cimport check_default_int
-from pyspades import debug
 
 cdef class Loader:
     def __init__(self, ByteReader reader = None):

@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -184,6 +184,15 @@ cdef class VXLData:
         r, g, b, a = color_tuple
         cdef int color = make_color(r, g, b, a)
         set_point(x, y, z, self.map, 1, color)
+        return True
+    
+    cpdef bint set_column_fast(self, int x, int y, int z_start,
+                                int z_end, int z_color_end,
+                                int color):
+        """Set a column's solidity, but only color a limited amount from
+            the top."""
+        set_column_solid(x, y, z_start, z_end, self.map, 1)
+        set_column_color(x, y, z_start, z_color_end, self.map, color)
         return True
     
     def set_point_unsafe_int(self, int x, int y, int z, int color):

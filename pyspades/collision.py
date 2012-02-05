@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -21,6 +21,11 @@ def vector_collision(vec1, vec2, distance = 3):
     return (math.fabs(vec1.x - vec2.x) < distance and
             math.fabs(vec1.y - vec2.y) < distance and
             math.fabs(vec1.z - vec2.z) < distance)
+
+def collision_3d(x1, y1, z1, x2, y2, z2, distance = 3):
+    return (math.fabs(x1 - x2) < distance and
+            math.fabs(y1 - y2) < distance and
+            math.fabs(z1 - z2) < distance)
 
 def distance_3d_vector(vector1, vector2):
     xd = vector1.x - vector2.x

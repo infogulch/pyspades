@@ -139,7 +139,7 @@ class Shotgun(BaseWeapon):
         return damage
 
 WEAPONS = {
-    SEMI_WEAPON : Rifle,
+    RIFLE_WEAPON : Rifle,
     SMG_WEAPON : SMG,
     SHOTGUN_WEAPON : Shotgun,
 }

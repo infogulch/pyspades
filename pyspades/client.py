@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -24,7 +24,6 @@ from twisted.internet import reactor
 from pyspades.protocol import BaseConnection, in_packet
 from pyspades.bytes import ByteReader, ByteWriter
 from pyspades.packet import Packet, load_server_packet
-from pyspades.loaders import *
 from pyspades.common import *
 from pyspades import contained as loaders
 from pyspades.multidict import MultikeyDict

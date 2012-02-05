@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -66,13 +66,15 @@ class BaseConnection(object):
 
 class BaseProtocol(object):
     connection_class = BaseConnection
+    max_connections = 32
+    
     def __init__(self, port = None, interface = 'localhost', 
                  update_interval = 1 / 60.0):
         if port is not None and interface is not None:
             address = enet.Address(interface, port)
         else:
             address = None
-        self.host = enet.Host(address, 32, 1)
+        self.host = enet.Host(address, self.max_connections, 1)
         self.host.compress_with_range_coder()
         self.update_loop = LoopingCall(self.update)
         self.update_loop.start(update_interval, False)
@@ -92,9 +94,12 @@ class BaseProtocol(object):
         connection.on_connect()
     
     def on_disconnect(self, peer):
-        connection = self.connections.pop(peer)
-        connection.disconnected = True
-        connection.on_disconnect()
+        try:
+            connection = self.connections.pop(peer)
+            connection.disconnected = True
+            connection.on_disconnect()
+        except KeyError:
+            return
     
     def data_received(self, peer, packet):
         connection = self.connections[peer]

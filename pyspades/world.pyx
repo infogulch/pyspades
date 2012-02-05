@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -15,15 +15,30 @@
 # You should have received a copy of the GNU General Public License
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
-# from pyspades.common import *
 import math
 import time
 from pyspades.load cimport VXLData
 from pyspades.common cimport Vertex3
+from pyspades.constants import *
 
 cdef extern from "math.h":
     double fabs(double x)
 
+cdef extern from "world_c.cpp":
+    enum:
+        CUBE_ARRAY_LENGTH
+    struct LongVector3:
+        int x, y, z
+    int c_validate_hit "validate_hit" (
+        float shooter_x, float shooter_y, float shooter_z,
+        float orientation_x, float orientation_y, float orientation_z,
+        float victim_x, float victim_y, float victim_z, float tolerance)
+    int c_can_see "can_see" (void * map, float x0, float y0, float z0,
+        float x1, float y1, float z1)
+    int c_cast_ray "cast_ray" (void * map, float x0, float y0, float z0,
+        float x1, float y1, float z1, float length, long* x, long* y, long* z)
+    size_t cube_line_c "cube_line"(int, int, int, int, int, int, LongVector3 *)
+    
 from libc.math cimport sqrt
 
 cdef inline bint isvoxelsolid(VXLData map, double x, double y, double z):
@@ -47,6 +62,18 @@ cdef inline bint isvoxelsolid2(VXLData map, double x, double y, double z):
     elif z_int >= 64:
         return True
     return map.get_solid(x_int, y_int, z_int)
+
+cdef inline bint isvoxelsolidwrap(void * c_map, float x, float y, float z):
+    cdef VXLData map = <VXLData>c_map
+    return isvoxelsolid2(map, x, y, z);
+
+cdef inline bint can_see(VXLData map, float x1, float y1, float z1,
+    float x2, float y2, float z2):
+    return c_can_see(<void*>map, x1, y1, z1, x2, y2, z2)
+
+cdef inline bint cast_ray(VXLData map, float x1, float y1, float z1,
+    float x2, float y2, float z2, float length, long* x, long* y, long* z):
+    return c_cast_ray(<void*>map, x1, y1, z1, x2, y2, z2, length, x, y, z)
 
 cdef class Object
 cdef class World
@@ -76,127 +103,29 @@ cdef class Object:
 cdef class Grenade(Object):
     cdef public:
         Vertex3 position
-        Vertex3 acceleration
+        Vertex3 velocity
         double time_left
         object callback
 
     def initialize(self, double time_left, Vertex3 position, 
-                   Vertex3 orientation, Vertex3 acceleration, callback = None):
+                   Vertex3 orientation, Vertex3 velocity, callback = None):
         self.name = 'grenade'
         self.callback = callback
         self.position = Vertex3()
-        self.acceleration = Vertex3()
+        self.velocity = Vertex3()
         self.position.set_vector(position)
         if orientation is None:
-            self.acceleration.set_vector(acceleration)
+            self.velocity.set_vector(velocity)
         else:
-            self.acceleration.x = orientation.x + acceleration.x
-            self.acceleration.y = orientation.y + acceleration.y
-            self.acceleration.z = orientation.z + acceleration.z
+            self.velocity.x = orientation.x + velocity.x
+            self.velocity.y = orientation.y + velocity.y
+            self.velocity.z = orientation.z + velocity.z
         self.time_left = time_left
     
-    cpdef bint collides(self, Vertex3 player_position):
-        cdef Vertex3 position = self.position
-        cdef int player_x, player_y, player_z
-        cdef int nade_x, nade_y, nade_z
-        player_x = <int>(player_position.x - 0.5)
-        player_y = <int>(player_position.y - 0.5)
-        player_z = <int>(player_position.z - 0.5)
-        nade_x = <int>(position.x - 0.5)
-        nade_y = <int>(position.y - 0.5)
-        nade_z = <int>(position.z - 0.5)
-        if player_x == nade_x and player_y == nade_y and player_z == nade_z:
-            return True
-        cdef int v19 = 0
-        cdef int v39
-        cdef double v33, v36
-        if nade_x >= player_x:
-            if nade_x == player_x:
-                v33 = 0.0
-                v36 = 0.0
-            else:
-                v39 = 1
-                v19 = nade_x - player_x
-                v36 = player_x + 1 - player_position.x
-                v33 = (position.x - player_position.x) * 1024.0
-        else:
-            v39 = -1
-            v19 = player_x - nade_x
-            v36 = player_position.x - player_x
-            v33 = (player_position.x - position.x) * 1024.0
-        cdef int v40
-        cdef double v34, v37
-        if nade_y >= player_y:
-            if nade_y == player_y:
-                v34 = 0.0
-                v37 = 0.0
-            else:
-                v19 += nade_y - player_y
-                v40 = 1
-                v37 = player_y + 1 - player_position.y
-                v34 = (position.y - player_position.y) * 1024.0
-        else:
-            v19 += player_y - nade_y
-            v40 = -1
-            v37 = player_position.y - player_y
-            v34 = (player_position.y - position.y) * 1024.0
-        cdef int v41
-        cdef double v35, v38
-        if nade_z >= player_z:
-            if nade_z == player_z:
-                v35 = 0.0
-                v38 = 0.0
-            else:
-                v19 += nade_z - player_z
-                v41 = 1
-                v38 = player_z + 1 - player_position.z
-                v35 = (position.z - player_position.z) * 1024.0
-        else:
-            v19 += player_z - nade_z
-            v41 = -1
-            v38 = player_position.z - player_z
-            v35 = (player_position.z - position.z) * 1024.0
-        
-        cdef double v42 = v35 * v36 - v38 * v33
-        cdef int v42_int = <int>v42
-        cdef int v33_int = <int>v33
-        cdef double v43 = v35 * v37 - v38 * v34
-        cdef int v43_int = <int>v43
-        cdef int v34_int = <int>v34
-        cdef double v44 = v37 * v33 - v34 * v36
-        cdef int v44_int = <int>v44
-        cdef int v35_int = <int>v35
-        if v19 <= 32:
-            if v19 == 0:
-                return True
-        else:
-            v19 = 32
-        cdef int v14 = v44_int
-        cdef int v15 = v43_int
-        cdef int v12 = v42_int
-        cdef VXLData map = self.world.map
-        while 1:
-            if (v12 | v15) < 0 or player_z == nade_z:
-                if v14 < 0 or player_x == nade_x:
-                    player_y += v40
-                    v15 += v35_int
-                    v14 += v33_int
-                    v44_int = v14
-                else:
-                    player_x += v39
-                    v12 += v35_int
-                    v14 -= v34_int
-                    v44_int = v14
-            else:
-                player_z += v41
-                v12 -= v33_int
-                v15 -= v34_int
-            if isvoxelsolid2(map, player_x, player_y, player_z):
-                break
-            if v19 == 1:
-                return True
-            v19 -= 1
-        return False
+    cdef int hit_test(self, Vertex3 position):
+        cdef Vertex3 nade = self.position
+        return can_see(self.world.map, position.x, position.y, position.z,
+                       nade.x, nade.y, nade.z)
     
     cpdef double get_damage(self, Vertex3 player_position):
         cdef Vertex3 position = self.position
@@ -208,7 +137,7 @@ cdef class Grenade(Object):
         if (fabs(diff_x) < 16 and
             fabs(diff_y) < 16 and
             fabs(diff_z) < 16 and
-            self.collides(player_position)):
+            self.hit_test(player_position)):
             value = diff_x**2 + diff_y**2 + diff_z**2
             if value == 0.0:
                 return 100.0
@@ -218,7 +147,7 @@ cdef class Grenade(Object):
     cdef int update(self, double dt) except -1:
         cdef VXLData map = self.world.map
         cdef Vertex3 position = self.position
-        cdef Vertex3 acceleration = self.acceleration
+        cdef Vertex3 velocity = self.velocity
         self.time_left -= dt
         if self.time_left <= 0:
             # hurt players here
@@ -226,47 +155,48 @@ cdef class Grenade(Object):
                 self.callback(self)
             self.delete()
             return 0
-        acceleration.z += dt
+        velocity.z += dt
         cdef double new_dt = dt * 32.0
         cdef double old_x, old_y, old_z
         old_x = position.x
         old_y = position.y
         old_z = position.z
-        position.x += acceleration.x * new_dt
-        position.y += acceleration.y * new_dt
-        position.z += acceleration.z * new_dt
+        position.x += velocity.x * new_dt
+        position.y += velocity.y * new_dt
+        position.z += velocity.z * new_dt
         if not isvoxelsolid2(map, position.x, position.y, position.z):
             return 0
         cdef bint collided = False
         if <int>old_z != <int>position.z:
             if ((<int>position.x == <int>old_x and <int>position.y == <int>old_y)
             or not isvoxelsolid2(map, position.x, position.y, old_z)):
-                acceleration.z = -acceleration.z
+                velocity.z = -velocity.z
                 collided = True
         if not collided and <int>old_x != <int>position.x:
             if ((<int>old_y == <int>position.y and <int>old_z == <int>position.z)
             or not isvoxelsolid2(map, old_x, position.y, position.z)):
-                acceleration.x = -acceleration.x
+                velocity.x = -velocity.x
                 collided = True
         if not collided and <int>old_y != <int>position.y:
             if ((<int>old_x == <int>position.x and <int>old_z == <int>position.z)
             or not isvoxelsolid2(map, position.x, old_y, position.z)):
-                acceleration.y = -acceleration.y
+                velocity.y = -velocity.y
                 collided = True
         position.x = old_x
         position.y = old_y
         position.z = old_z
-        acceleration.x *= 0.3600000143051147
-        acceleration.y *= 0.3600000143051147
-        acceleration.z *= 0.3600000143051147
+        velocity.x *= 0.36
+        velocity.y *= 0.36
+        velocity.z *= 0.36
         return 0
         
 cdef class Character(Object):
     cdef public:
-        Vertex3 position, orientation, acceleration
-        bint fire, jump, crouch, aim
+        Vertex3 position, orientation, velocity
+        bint primary_fire, secondary_fire, jump, crouch
         bint up, down, left, right
         bint null, null2
+        bint primary_weapon
         double last_time
         double guess_z
         bint dead
@@ -275,8 +205,10 @@ cdef class Character(Object):
     def initialize(self, Vertex3 position, Vertex3 orientation, 
                    fall_callback = None):
         self.name = 'character'
-        self.fire = self.jump = self.crouch = self.aim = False
-        self.up = self.up = self.up = self.up = False
+        self.primary_fire = self.secondary_fire = False
+        self.primary_weapon = False
+        self.jump = self.crouch = False
+        self.up = self.down = self.left = self.right = False
         self.null = self.null2
         self.last_time = 0.0
         self.guess_z = 0.0
@@ -284,26 +216,30 @@ cdef class Character(Object):
         self.fall_callback = fall_callback
         self.position = Vertex3()
         self.orientation = Vertex3()
-        self.acceleration = Vertex3()
+        self.velocity = Vertex3()
         if position is not None:
             self.position.set_vector(position)
         if orientation is not None:
             self.orientation.set_vector(orientation)
     
-    def set_animation(self, fire = None, jump = None, crouch = None, aim = None):
-        if fire is not None:
-            self.fire = fire
+    def set_animation(self, primary_fire = None, secondary_fire = None, 
+                      jump = None, crouch = None):
+        if primary_fire is not None:
+            self.primary_fire = primary_fire
+        if secondary_fire is not None:
+            self.secondary_fire = secondary_fire
         if jump is not None:
             self.jump = jump
         if crouch is not None:
             if crouch != self.crouch:
                 if crouch:
-                    self.position.z += 0.8999999761581421
+                    self.position.z += 0.9
                 else:
-                    self.position.z -= 0.8999999761581421
+                    self.position.z -= 0.9
             self.crouch = crouch
-        if aim is not None:
-            self.aim = aim
+    
+    def set_weapon(self, is_primary):
+        self.primary_weapon = is_primary
     
     def set_walk(self, bint up, bint down, bint left, bint right):
         self.up = up
@@ -314,8 +250,9 @@ cdef class Character(Object):
     def set_position(self, x, y, z, reset = False):
         self.position.set(x, y, z)
         if reset:
-            self.acceleration.set(0.0, 0.0, 0.0)
-            self.fire = self.jump = self.crouch = self.aim = False
+            self.velocity.set(0.0, 0.0, 0.0)
+            self.primary_fire = self.secondary_fire = False 
+            self.jump = self.crouch = False
             self.up = self.down = self.left = self.right = False
         
     def set_orientation(self, x, y, z):
@@ -324,113 +261,73 @@ cdef class Character(Object):
     def throw_grenade(self, time_left, callback = None):
         position = Vertex3(self.position.x, self.position.y, self.guess_z)
         item = self.world.create_object(Grenade, time_left, position, 
-            self.orientation, self.acceleration, callback)
+            self.orientation, self.velocity, callback)
         return item
     
-    def get_hit_direction(self, Vertex3 position):
-        # 0 = aligned
-        # 1 = left
-        # 2 = right
-        # 3 = up
-        # 4 = down
-        cdef double x, y, z
-        x, y, z = position.get()
-        x -= self.position.x
-        y -= self.position.y
-        z -= self.position.z
+    cpdef int can_see(self, float x, float y, float z):
+        cdef Vertex3 position = self.position
+        return can_see(self.world.map, position.x, position.y, position.z, 
+            x, y, z)
+    
+    cpdef cast_ray(self, length = 32.0):
+        cdef Vertex3 position = self.position
+        cdef Vertex3 direction = self.orientation.normal()
+        cdef long x, y, z
+        if cast_ray(self.world.map, position.x, position.y, position.z, 
+            direction.x, direction.y, direction.z, length, &x, &y, &z):
+            return x, y, z
+        return None
+    
+    def validate_hit(self, Character other, part, float tolerance):
+        cdef Vertex3 position1 = self.position
         cdef Vertex3 orientation = self.orientation
-        cdef double cz = (
-            orientation.z * z +
-            orientation.x * x +
-            orientation.y * y
-        )
-        
-        cdef double r
-        if cz == 0.0:
-            r = 0
+        cdef Vertex3 position2 = other.position
+        cdef float x, y, z
+        x = position2.x
+        y = position2.y
+        z = position2.z
+        if part in (TORSO, ARMS):
+            z += 0.9
+        elif part == HEAD:
+            pass
+        elif part == LEGS:
+            z += 1.8
+        elif part == MELEE:
+            z += 0.9
         else:
-            r = 1.0 / cz
-        
-        cdef double xypow2 = orientation.y ** 2 + orientation.x ** 2
-        
-        cdef double orientx_over_vecxy, orienty_over_vecxy
-        
-        if xypow2 == 0.0:
-            orienty_over_vecxy = orientx_over_vecxy = 0
-        else:
-            orienty_over_vecxy = -orientation.y / xypow2
-            orientx_over_vecxy = orientation.x / xypow2
-        
-        cdef double cx = (
-            orientx_over_vecxy * y +
-            orienty_over_vecxy * x #+
-            #always_null * z
-        )
-        
-        cdef double orientx_over_vecxy2 = orientx_over_vecxy * -orientation.z
-        cdef double orientvecxyz = orienty_over_vecxy * orientation.z
-        cdef double orient_vecxy_again = (
-            orientx_over_vecxy * orientation.x -
-            orienty_over_vecxy * orientation.y)
-        
-        cdef double x2 = cx * r
-        cdef double cy = (
-            orientx_over_vecxy2 * x +
-            orientvecxyz * y +
-            orient_vecxy_again * z
-        )
-        cdef double y2 = cy * r
-        if fabs(x2) < 0.25 and fabs(y2) < 0.25:
-            return 0
-        
-        if fabs(x2) >= fabs(y2):
-            if cz >= 0:
-                if x2 < 0:
-                    return 1
-                else:
-                    return 2
-            else:
-                if x2 < 0:
-                    return 2
-                else:
-                    return 1
-        if cz >= 0:
-            if y2 < 0:
-                return 3
-            else:
-                return 4
-        else:
-            if y2 < 0:
-                return 4
-            else:
-                return 3
+            return False
+        if not c_validate_hit(position1.x, position1.y, position1.z,
+                              orientation.x, orientation.y, orientation.z,
+                              x, y, z, tolerance):
+            return False
+        return True
         
     cdef int update(self, double dt) except -1:
         if self.dead:
             return 0
         cdef Vertex3 orientation = self.orientation
-        cdef Vertex3 acceleration = self.acceleration
+        cdef Vertex3 velocity = self.velocity
         if self.jump:
             self.jump = False
-            acceleration.z = -0.3600000143051147
+            velocity.z = -0.36
         cdef int v2 = self.null
         cdef double v3 = dt
         cdef double v4
         if v2:
-            v4 = dt * 0.1000000014901161
+            v4 = dt * 0.1
             v3 = v4
         elif self.crouch:
-            v3 = dt * 0.300000011920929
-        elif self.aim:
+            v3 = dt * 0.3
+        elif self.secondary_fire and self.primary_weapon:
             v3 = dt * 0.5
         if (self.up or self.down) and (self.left or self.right):
-            v3 *= 0.7071067690849304
+            v3 *= 0.70710678 # SQRT
         if self.up:
-            acceleration.x += orientation.x * v3
-            acceleration.y += orientation.y * v3
+            velocity.x += orientation.x * v3
+            velocity.y += orientation.y * v3
         elif self.down:
-            acceleration.x -= orientation.x * v3
-            acceleration.y -= orientation.y * v3
+            velocity.x -= orientation.x * v3
+            velocity.y -= orientation.y * v3
         
         cdef double xypow, orienty_over_xypow, orientx_over_xypow
         
@@ -442,126 +339,126 @@ cdef class Character(Object):
                 orienty_over_xypow = -orientation.y / xypow
                 orientx_over_xypow = orientation.x / xypow
             if self.left:
-                acceleration.x -= orienty_over_xypow * v3
-                acceleration.y -= orientx_over_xypow * v3
+                velocity.x -= orienty_over_xypow * v3
+                velocity.y -= orientx_over_xypow * v3
             else:
-                acceleration.x += orienty_over_xypow * v3
-                acceleration.y += orientx_over_xypow * v3
+                velocity.x += orienty_over_xypow * v3
+                velocity.y += orientx_over_xypow * v3
         cdef double v13 = dt + 1.0
-        cdef double v9 = acceleration.z + dt
-        acceleration.z = v9 / v13
+        cdef double v9 = velocity.z + dt
+        velocity.z = v9 / v13
         if not self.null2:
             if not self.null:
                 v13 = dt * 4.0 + 1.0
         else:
             v13 = dt * 6.0 + 1.0
-        acceleration.x /= v13
-        acceleration.y /= v13
-        cdef double old_acceleration = acceleration.z
+        velocity.x /= v13
+        velocity.y /= v13
+        cdef double old_acceleration = velocity.z
         self.calculate_position(dt)
-        if 0.0 != acceleration.z or old_acceleration <= 0.24:
+        if 0.0 != velocity.z or old_acceleration <= 0.24:
             pass
         else:
-            acceleration.x *= 0.5
-            acceleration.y *= 0.5
-            if old_acceleration > 0.58:
-                if self.fall_callback is not None:
-                    self.fall_callback(-27 - old_acceleration**3 * -256.0)
+            velocity.x *= 0.5
+            velocity.y *= 0.5
+            if self.fall_callback is not None and old_acceleration > 0.58:
+                old_acceleration -= 0.58
+                self.fall_callback(old_acceleration**2 * 4096)
         return 0
     
     cdef int calculate_position(self, double dt) except -1:
         cdef Vertex3 orientation = self.orientation
-        cdef Vertex3 acceleration = self.acceleration
+        cdef Vertex3 velocity = self.velocity
         cdef VXLData map = self.world.map
         cdef Vertex3 position = self.position
         cdef int v1 = 0
         cdef double v4 = dt * 32.0
-        cdef double v43 = acceleration.x * v4 + position.x
-        cdef double v45 = acceleration.y * v4 + position.y
-        cdef double v3 = 0.449999988079071
+        cdef double v43 = velocity.x * v4 + position.x
+        cdef double v45 = velocity.y * v4 + position.y
+        cdef double v3 = 0.45
         cdef double v47
         cdef double v5
         if self.crouch:
-            v47 = 0.449999988079071
-            v5 = 0.8999999761581421
+            v47 = 0.45
+            v5 = 0.9
         else:
-            v47 = 0.8999999761581421
-            v5 = 1.350000023841858
+            v47 = 0.9
+            v5 = 1.35
         cdef double v31 = v5
         cdef double v29 = position.z + v47
-        if acceleration.x < 0.0:
-            v3 = -0.449999988079071
+        if velocity.x < 0.0:
+            v3 = -0.45
         cdef double v26 = v3
         cdef double v19 = v5
         cdef double v38, v32, v6, v7, v8
-        if v31 >= -1.360000014305115:
-            v38 = position.y - 0.449999988079071
+        if v31 >= -1.36:
+            v38 = position.y - 0.45
             v32 = v43 + v26
             while 1:
                 v6 = v19 + v29
                 if isvoxelsolid(map, v32, v38, v6):
                     break
                 v7 = v19 + v29
-                v8 = position.y + 0.449999988079071
+                v8 = position.y + 0.45
                 if isvoxelsolid(map, v32, v8, v7):
                     break
-                v19 -= 0.8999999761581421
-                if v19 < -1.360000014305115:
+                v19 -= 0.9
+                if v19 < -1.36:
                     break
         cdef double v20, v39, v33, v9, v23, v10, 
-        if v19 >= -1.360000014305115:
+        if v19 >= -1.36:
             if self.crouch or orientation.z >= 0.5:
-                acceleration.x = 0
+                velocity.x = 0
             else:
-                v20 = 0.3499999940395355
-                v39 = position.y - 0.449999988079071
+                v20 = 0.35
+                v39 = position.y - 0.45
                 v33 = v43 + v26
-                v9 = 0.3499999940395355
+                v9 = 0.35
                 while 1:
                     v23 = v9 + v29
                     if isvoxelsolid(map, v33, v39, v23):
                         v9 = v20
                         break
-                    v10 = position.y + 0.449999988079071
+                    v10 = position.y + 0.45
                     if isvoxelsolid(map, v33, v10, v23):
                         v9 = v20
                         break
-                    v20 -= 0.8999999761581421
+                    v20 -= 0.9
                     v9 = v20
-                    if v20 < -2.359999895095825:
+                    if v20 < -2.36:
                         break
-                if v9 >= -2.359999895095825:
-                    acceleration.x = 0.0
+                if v9 >= -2.36:
+                    velocity.x = 0.0
                 else:
                     v1 = 1
                     position.x = v43
         else:
             position.x = v43
         cdef double v11
-        if acceleration.y >= 0.0:
-            v11 = 0.449999988079071
+        if velocity.y >= 0.0:
+            v11 = 0.45
         else:
-            v11 = -0.449999988079071
+            v11 = -0.45
         cdef double v27 = v11
         cdef double v21 = v5
         cdef double v34, v40, v24, v12
-        if (v31 >= -1.360000014305115):
-            v34 = position.x - 0.449999988079071
+        if v31 >= -1.36:
+            v34 = position.x - 0.45
             v40 = v45 + v27
             while 1:
                 v24 = v21 + v29
                 if isvoxelsolid(map, v34, v40, v24):
                     break
-                v12 = position.x + 0.449999988079071
+                v12 = position.x + 0.45
                 if isvoxelsolid(map, v12, v40, v24):
                     break
-                v21 -= 0.8999999761581421
-                if v21 < -1.360000014305115:
+                v21 -= 0.9
+                if v21 < -1.36:
                     break
         cdef bint label34 = False
         cdef double v22, v35, v41, v25, v14
         cdef double v13
-        if v21 >= -1.360000014305115:
+        if v21 >= -1.36:
             if self.crouch or orientation.z >= 0.5:
                 if v1:
                     label34 = True
@@ -569,66 +466,66 @@ cdef class Character(Object):
                 if v1:
                     label34 = True
                 else:
-                    v22 = 0.3499999940395355
-                    v35 = position.x - 0.449999988079071
+                    v22 = 0.35
+                    v35 = position.x - 0.45
                     v41 = v45 + v27
-                    v13 = 0.3499999940395355
+                    v13 = 0.35
                     while 1:
                         v25 = v13 + v29
                         if isvoxelsolid(map, v35, v41, v25):
                             v13 = v22
                             break
-                        v14 = position.x + 0.449999988079071
+                        v14 = position.x + 0.45
                         if isvoxelsolid(map, v14, v41, v25):
                             v13 = v22
                             break
-                        v22 -= 0.8999999761581421
+                        v22 -= 0.9
                         v13 = v22
-                        if v22 < -2.359999895095825:
+                        if v22 < -2.36:
                             break
-                    if v13 < -2.359999895095825:
+                    if v13 < -2.36:
                         position.y = v45
                         label34 = True
             if not label34:
-                acceleration.y = 0.0
+                velocity.y = 0.0
         else:
             position.y = v45
             if v1:
                 label34 = True
         cdef double v30
         if label34:
-            acceleration.x *= 0.5
-            acceleration.y *= 0.5
+            velocity.x *= 0.5
+            velocity.y *= 0.5
             self.last_time = time.time()
             v30 = v29 - 1.0
-            v31 = -1.350000023841858
+            v31 = -1.35
         else:
-            if acceleration.z < 0.0:
+            if velocity.z < 0.0:
                 v31 = -v31
-            v30 = acceleration.z * dt * 32.0 + v29
+            v30 = velocity.z * dt * 32.0 + v29
         self.null = 1
         cdef double v46 = v30 + v31
-        cdef double v42 = position.y - 0.449999988079071
-        cdef double v36 = position.x - 0.449999988079071
+        cdef double v42 = position.y - 0.45
+        cdef double v36 = position.x - 0.45
         cdef bint flag = False
         cdef double v44, v37
         if isvoxelsolid(map, v36, v42, v46):
             flag = True
         else:
-            v44 = position.y + 0.449999988079071
+            v44 = position.y + 0.45
             if isvoxelsolid(map, v36, v44, v46):
                 flag = True
             else:
-                v37 = position.x + 0.449999988079071
+                v37 = position.x + 0.45
                 if isvoxelsolid(map, v37, v42, v46):
                     flag = True
                 elif isvoxelsolid(map, v37, v44, v46):
                     flag = True
         if flag:
-            if acceleration.z >= 0.0:
+            if velocity.z >= 0.0:
                 self.null2 = position.z > 61.0
                 self.null = 0
-            acceleration.z = 0
+            velocity.z = 0
         else:
             position.z = v30 - v47
         cdef double v16 = self.last_time
@@ -660,3 +557,23 @@ cdef class World(object):
         new_object = klass(self, *arg, **kw)
         self.objects.append(new_object)
         return new_object
+
+# utility functions
+
+cdef class Int3:
+    cdef public:
+        int x, y, z
+
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+def cube_line(x1, y1, z1, x2, y2, z2):
+    cdef LongVector3 array[CUBE_ARRAY_LENGTH]
+    cdef size_t size = cube_line_c(x1, y1, z1, x2, y2, z2, array)
+    cdef list point_list = []
+    cdef int i
+    for i in range(size):
+        point_list.append(Int3(array[i].x, array[i].y, array[i].z))
+    return point_list

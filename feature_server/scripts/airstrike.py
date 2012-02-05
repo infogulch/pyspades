@@ -6,6 +6,7 @@ from twisted.internet import reactor
 import random
 import commands
 
+@commands.alias('a')
 def airstrike(connection, value = None):
     return connection.start_airstrike(value)
 

@@ -1,8 +1,9 @@
 # contributed by Booboorocks998, fixed/maintained by mat^2
 
-from commands import add
+import commands
 from pyspades.constants import *
 
+@commands.alias('m')
 def medkit(connection):
     if connection.medkits and connection.hp < 100:
         connection.set_hp(connection.hp + connection.protocol.heal_amount,
@@ -11,7 +12,7 @@ def medkit(connection):
         connection.send_chat('You have been healed')
     else:
         connection.send_chat("You don't have any medkits or have full health!")
-add(medkit)
+commands.add(medkit)
 
 def apply_script(protocol, connection, config):
     default_medkits = config.get('medkits', 1)

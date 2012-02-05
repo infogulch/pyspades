@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -36,7 +36,7 @@ def filter_printable(value):
 
 def channel(func):
     def new_func(self, user, channel, *arg, **kw):
-        if not channel == self.factory.channel:
+        if not channel.lower() == self.factory.channel:
             return
         user = user.split('!', 1)[0]
         func(self, user, channel, *arg, **kw)
@@ -55,7 +55,7 @@ class IRCBot(irc.IRCClient):
         self.join(self.factory.channel, self.factory.password)
     
     def joined(self, channel):
-        if channel == self.factory.channel:
+        if channel.lower() == self.factory.channel:
             self.ops = set()
             self.voices = set()
         print "Joined channel %s" % channel
@@ -71,7 +71,7 @@ class IRCBot(irc.IRCClient):
             self.voices.add(new_user)
     
     def irc_RPL_NAMREPLY(self, *arg):
-        if not arg[1][2] == self.factory.channel:
+        if not arg[1][2].lower() == self.factory.channel:
             return
         for name in arg[1][3].split():
             mode = name[0]
@@ -80,7 +80,7 @@ class IRCBot(irc.IRCClient):
                 l[mode].add(name[1:])
     
     def left(self, channel):
-        if channel == self.factory.channel:
+        if channel.lower() == self.factory.channel:
             self.ops = None
             self.voices = None
     
@@ -146,7 +146,8 @@ class IRCClientFactory(protocol.ClientFactory):
             'pyspades%s' % random.randrange(0, 99)).encode('ascii')
         self.username = config.get('username', 'pyspades').encode('ascii')
         self.realname = config.get('realname', server.name).encode('ascii')
-        self.channel = config.get('channel', "#pyspades.bots").encode('ascii')
+        self.channel = config.get('channel', "#pyspades.bots").encode(
+            'ascii').lower()
         self.commandprefix = config.get('commandprefix', '.').encode('ascii')
         self.chatprefix = config.get('chatprefix', '').encode('ascii')
         self.password = config.get('password', '').encode('ascii') or None
@@ -187,7 +188,7 @@ class IRCRelay(object):
     def me(self, *arg, **kw):
         if self.factory.bot is None:
             return
-        self.factory.bot.describe(*arg, **kw)
+        self.factory.bot.me(*arg, **kw)
 
 def colors(connection):
     if connection in connection.protocol.players:
@@ -202,10 +203,12 @@ def who(connection):
     if connection in connection.protocol.players:
         raise KeyError()
     if connection.colors:
-        names = [('\x0303' if conn.team.id else '\x0302') + conn.name for conn in
-            connection.protocol.players.values()]
+        names = [('\x0303' if conn.team.id else '\x0302') + 
+            conn.name + ' #%s' % conn.player_id
+            for conn in connection.protocol.players.values()]
     else:
-        names = [conn.name for conn in connection.protocol.players.values()]
+        names = [conn.name+' #%s' % conn.player_id 
+            for conn in connection.protocol.players.values()]
     count = len(names)
     msg = "has %s player%s connected" % ("no" if not count else count,
         "" if count == 1 else "s")

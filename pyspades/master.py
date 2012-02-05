@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011.
+# Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -23,12 +23,11 @@ from pyspades.common import *
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from pyspades.bytes import ByteReader
+from pyspades.constants import MASTER_VERSION
 
 import random
 
 MAX_SERVER_NAME_SIZE = 31
-
-MASTER_VERSION = 29
 
 HOST = 'ace-spades.com'
 PORT = 32885
@@ -93,6 +92,8 @@ class MasterConnection(BaseConnection):
         self.disconnect_callback = None
 
 from twisted.web.client import getPage
+
+IP_GETTER = 'http://automation.whatismyip.com/n09230945.asp'
 
 def get_external_ip():
     return getPage(IP_GETTER)
