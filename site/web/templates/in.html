@@ -27,11 +27,11 @@
 </tr>
 {% for server in servers %}
     <tr>
-    <td>{{['No', 'Yes'][(server.ip in has_pyspades)|int]}}</td>
-    <td>{{server.players}}/{{server.max}}</td>
+    <td>{{['No', 'Yes'][(server.identifier in has_pyspades)|int]}}</td>
+    <td>{{server.count}}/{{server.max}}</td>
     <td>{{server.ping}}</td>
-    <td><a href="aos://{{make_server_number(server.ip)}}">{{server.name}}</a></td>
-    <td>aos://{{make_server_number(server.ip)}}</td>
+    <td><a href="{{make_server_identifier(server.ip, server.port)}}">{{server.name}}</a></td>
+    <td>{{make_server_identifier(server.ip, server.port)}}</td>
     </tr>
 {% endfor %}
 </tbody>
@@ -41,7 +41,8 @@
 </br>
 Certified servers:
 {% for server in statistics.connections %}
-    </br><a href="aos://{{make_server_number(server.transport.getPeer().host)}}">{{server.name}}</a>
+    </br><a href="{{make_server_identifier(server.transport.getPeer().host,
+    server.transport.getPeer().port)}}">{{server.name}}</a>
 {% endfor %}
 </br>
 </br>

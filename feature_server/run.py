@@ -93,7 +93,7 @@ from twisted.protocols.basic import LineReceiver
 from pyspades.common import encode, decode, prettify_timespan
 from pyspades.constants import *
 from pyspades.master import MAX_SERVER_NAME_SIZE, get_external_ip
-from pyspades.tools import make_server_number
+from pyspades.tools import make_server_identifier
 from networkdict import NetworkDict, get_network
 from pyspades.exceptions import InvalidData
 from pyspades.bytes import NoDataLeft
@@ -623,7 +623,7 @@ class FeatureProtocol(ServerProtocol):
     
     def got_external_ip(self, ip):
         self.ip = ip
-        self.identifier = 'aos://%s' % make_server_number(ip)
+        self.identifier = make_server_identifier(ip, )
         print 'Server identifier is %s' % self.identifier
     
     def set_time_limit(self, time_limit = None):
