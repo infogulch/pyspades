@@ -22,6 +22,8 @@
 <td>pyspades</td>
 <td>slots</td>
 <td>ping</td>
+<td>mode</td>
+<td>map</td>
 <td>server</td>
 <td>address</td>
 </tr>
@@ -30,6 +32,8 @@
     <td>{{['No', 'Yes'][(server.identifier in has_pyspades)|int]}}</td>
     <td>{{server.count}}/{{server.max}}</td>
     <td>{{server.ping}}</td>
+    <td>{{server.game_mode}}</td>
+    <td>{{server.map}}</td>
     <td><a href="{{make_server_identifier(server.ip, server.port)}}">{{server.name}}</a></td>
     <td>{{make_server_identifier(server.ip, server.port)}}</td>
     </tr>
