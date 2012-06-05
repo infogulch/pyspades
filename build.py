@@ -15,7 +15,8 @@ names = [
     'pyspades.common',
     'pyspades.world',
     'pyspades.loaders',
-    'pyspades.mapmaker'
+    'pyspades.mapmaker',
+    'pyspades.navigation'
 ]
 
 for name in names:

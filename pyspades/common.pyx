@@ -37,6 +37,9 @@ def binify(data, size = 2):
     binText = (2 * 8 - len(binText)) * '0' + binText
     return binText
 
+def sgn(x):
+    return (x > 0) - (x < 0)
+
 MAX_HEX_SIZE = 110
 EPSILON = 0.0000001
 
