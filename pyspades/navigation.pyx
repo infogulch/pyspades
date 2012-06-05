@@ -46,7 +46,8 @@ cdef class Navigation:
         cdef list steps
         point_count = grid_bfs(self.map, &points, x1, y1, z1, x2, y2, z2)
         steps = [(points[i], points[i+1]) for i in xrange(0, point_count * 2, 2)]
-        delete_points(&points)
+        if point_count > 0:
+            delete_points(&points)
         return steps
     
     cpdef get_node_count(self):

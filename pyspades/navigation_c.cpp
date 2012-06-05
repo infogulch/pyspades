@@ -421,7 +421,7 @@ int string_pull(float const* portals, int portal_count, float* points,
     v_copy(portal_right, &portals[2]);
     
     v_copy(&points[point_count*2], portal_apex);
-    point_count++;
+    ++point_count;
     
     for (int i = 1; i < portal_count && point_count < max_points; ++i) {
         float const* left = &portals[i*4 + 0];
