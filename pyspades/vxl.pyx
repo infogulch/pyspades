@@ -193,6 +193,9 @@ cdef class VXLData:
         set_column_color(x, y, z_start, z_color_end, self.map, color)
         return True
     
+    cpdef update_shadows(self):
+        update_shadows(self.map)
+    
     def get_overview(self, int z = -1, bint rgba = False):
         cdef unsigned int * data
         cdef unsigned int i, r, g, b, a, color
