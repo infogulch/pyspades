@@ -235,9 +235,10 @@ class ServerConnection(BaseConnection):
                                 loaders.ShortPlayerData.id):
                 old_team = self.team
                 team = self.protocol.teams[contained.team]
+
                 if self.on_team_join(team) == False:
-                    if not team.spectator:
-                        team = team.other
+                    team = team.spectator
+
                 self.team = team
                 if self.name is None:
                     name = contained.name
