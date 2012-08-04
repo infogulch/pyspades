@@ -120,13 +120,13 @@
     "scripts" : [
         "welcome",
         "rollback",
-        "trusted",
         "protect",
         "map_extensions",
         "airstrike",
         "squad",
         "disco",
         "votekick",
+        "trusted",
         "ratio",
         "memcheck"
     ],
