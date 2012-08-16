@@ -24,6 +24,7 @@ import sys
 import os
 sys.path.append('../../')
 
+import re
 import math
 import subprocess
 from collections import OrderedDict
@@ -814,13 +815,15 @@ class MapEditor(QtGui.QMainWindow):
         if not name:
             return
         root, ext = os.path.splitext(name)
+        head, tail = os.path.split(root)
+        path = os.path.join(root, head, re.sub('\d{2}$', '', tail))
         progress = progress_dialog(self.edit_widget, 0, 63, 'Exporting images...')
         for z, image in enumerate(reversed(self.layers)):
             if progress.wasCanceled():
                 break
             progress.setValue(z)
             new_image = make_colorkey(image)
-            new_image.save(root + format(z, '02d') + ext)
+            new_image.save(path + format(z, '02d') + ext)
     
     def copy_selected(self):
         self.clipboard.setImage(self.edit_widget.image)
@@ -968,10 +971,9 @@ class MapEditor(QtGui.QMainWindow):
             reply = QMessageBox.warning(self, self.app.applicationName(), text,
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                 QMessageBox.Yes)
-            if reply == QMessageBox.Yes:
-                if not self.save_selected():
-                    return
-            elif reply == QMessageBox.Cancel:
+            if reply == QMessageBox.Cancel:
+                return
+            elif reply == QMessageBox.Yes and not self.save_selected():
                 return
         self.app.exit()
 
