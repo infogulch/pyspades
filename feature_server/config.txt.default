@@ -133,7 +133,7 @@
     
     "squad_respawn_time" : 45,
     "squad_size" : 4,
-    "auto_squad" : false,    
+    "auto_squad" : false,
     "load_saved_map" : false,
     "statistics" : {
         "host" : "localhost",
