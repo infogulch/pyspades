@@ -1,0 +1,12 @@
+feature_server/logs/*
+feature_server/scripts/*
+feature_server/maps/*
+feature_server/qb
+build
+enet/enet.c
+.pyd
+.pyc
+.cpp
+.txtc
+.o
+.def
