@@ -209,6 +209,7 @@ class ServerConnection(BaseConnection):
         self.address = (address.host, address.port)
         self.respawn_time = protocol.respawn_time
         self.rapids = SlidingWindow(RAPID_WINDOW_ENTRIES)
+        self.cached = 0
     
     def on_connect(self):
         if self.peer.eventData != self.protocol.version:
@@ -262,6 +263,9 @@ class ServerConnection(BaseConnection):
                         self.world_object.delete()
                         self.world_object = None
                 self.spawn()
+                return
+            if contained.id == loaders.MapCached.id:
+                self.cached = contained.cached
                 return
             if self.hp:
                 world_object = self.world_object
@@ -335,6 +339,10 @@ class ServerConnection(BaseConnection):
                             self.on_shoot_set(primary)
                     if world_object.secondary_fire != secondary:
                         self.on_secondary_fire_set(secondary)
+                        weapon = self.weapon_object
+                        if weapon.reloading:
+                            weapon.reloading = False
+                            weapon.reload_call.cancel()
                     world_object.primary_fire = primary
                     world_object.secondary_fire = secondary
                     if self.filter_weapon_input:
@@ -736,6 +744,7 @@ class ServerConnection(BaseConnection):
                     world.Character, position, None, self._on_fall)
             self.world_object.dead = False
             self.tool = WEAPON_TOOL
+            self.world_object.set_weapon(1)
             self.refill(True)
             create_player.x = x
             create_player.y = y
@@ -921,11 +930,10 @@ class ServerConnection(BaseConnection):
         self.kills += score
     
     def _connection_ack(self):
-        self._send_connection_data()
         self.send_map(ProgressiveMapGenerator(self.protocol.map))
+        self._send_connection_data()
     
     def _send_connection_data(self):
-        saved_loaders = self.saved_loaders = []
         if self.player_id is None:
             for player in self.protocol.players.values():
                 if player.name is None:
@@ -937,12 +945,12 @@ class ServerConnection(BaseConnection):
                 existing_player.kills = player.kills
                 existing_player.team = player.team.id
                 existing_player.color = make_color(*player.color)
-                saved_loaders.append(existing_player.generate())
+                self.saved_loaders.append(existing_player.generate())
 
             self.player_id = self.protocol.player_ids.pop()
             self.protocol.update_master()
             
-        # send initial data
+    def _send_server_state(self):
         blue = self.protocol.blue_team
         green = self.protocol.green_team
 
@@ -994,9 +1002,9 @@ class ServerConnection(BaseConnection):
             
         elif game_mode == TC_MODE:
             state_data.state = tc_data
-        
-        generated_data = state_data.generate()
-        saved_loaders.append(generated_data)
+        packet = enet.Packet(str(state_data.generate()),
+            enet.PACKET_FLAG_RELIABLE)
+        self.peer.send(0, packet)
         
     def grenade_exploded(self, grenade):
         if self.name is None or self.team.spectator:
@@ -1062,17 +1070,22 @@ class ServerConnection(BaseConnection):
     
     def send_map(self, data = None):
         if data is not None:
+            self.saved_loaders = []
             self.map_data = data
             map_start.size = data.get_size()
+            map_start.crc = self.protocol.map_info.data.crc
+            map_start.name = self.protocol.map_info.rot_info.get_map_name()
             self.send_contained(map_start)
-        elif self.map_data is None:
+            return
+        if self.cached is None:
             return
             
-        if not self.map_data.data_left():
+        if self.cached is 1 or not self.map_data.data_left():
             self.map_data = None
             for data in self.saved_loaders:
                 packet = enet.Packet(str(data), enet.PACKET_FLAG_RELIABLE)
                 self.peer.send(0, packet)
+            self._send_server_state()
             self.saved_loaders = None
             self.on_join()
             return
@@ -1581,22 +1594,15 @@ class ServerProtocol(BaseProtocol):
             self.update_network()
     
     def update_network(self):
-        items = []
-        for i in xrange(32):
-            position = orientation = None
-            try:
-                player = self.players[i]
-                if (not player.filter_visibility_data and 
-                not player.team.spectator):
-                    world_object = player.world_object
-                    position = world_object.position.get()
-                    orientation = world_object.orientation.get()
-            except (KeyError, TypeError, AttributeError):
-                pass
-            if position is None:
-                position = (0.0, 0.0, 0.0)
-                orientation = (0.0, 0.0, 0.0)
-            items.append((position, orientation))
+        items = {}
+        for player in self.players.values():
+            if (player.filter_visibility_data or player.team.spectator
+                or player.world_object.dead):
+                continue
+            world_object = player.world_object
+            items[player.player_id] = (world_object.position.get(),
+                                       world_object.orientation.get())
+                                       
         world_update.items = items
         self.send_contained(world_update, unsequenced = True)
     
@@ -1618,7 +1624,7 @@ class ServerProtocol(BaseProtocol):
                     connection.disconnect()
                     continue
                 connection.reset()
-                connection._send_connection_data()
+                connection.cached = None
                 connection.send_map(data.get_child())
         self.update_entities()
     

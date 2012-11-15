@@ -128,7 +128,8 @@
         "votekick",
         "trusted",
         "ratio",
-        "memcheck"
+        "memcheck",
+        "reportdamage"
     ],
     
     "squad_respawn_time" : 45,
