@@ -33,7 +33,7 @@ MAX_SERVER_NAME_SIZE = 31
 MAX_MAP_NAME_SIZE = 20
 MAX_GAME_MODE_SIZE = 7
 
-HOST = '199.195.254.202'
+HOST = 'master.buildandshoot.com'
 
 if STAGING:
     PORT = 32885
@@ -107,9 +107,12 @@ IP_GETTER = 'http://automation.whatismyip.com/n09230945.asp'
 def get_external_ip(interface = ''):
     return getPage(IP_GETTER, bindAddress = (interface, 0))
 
+import socket
+
 def get_master_connection(protocol):
     defer = Deferred()
-    connection = protocol.connect(MasterConnection, HOST, PORT, MASTER_VERSION)
+    master_ip = socket.gethostbyname(HOST)
+    connection = protocol.connect(MasterConnection, master_ip, PORT, MASTER_VERSION)
     connection.server_protocol = protocol
     connection.defer = defer
     return defer
