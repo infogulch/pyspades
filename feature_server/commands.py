@@ -153,6 +153,27 @@ def ban(connection, value, *arg):
     player.ban(reason, duration)
 
 @admin
+def hban(connection, value, *arg):
+    duration = int(60)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
+def dban(connection, value, *arg):
+    duration = int(1440)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
+def wban(connection, value, *arg):
+    duration = int(10080)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
 def banip(connection, ip, *arg):
     duration, reason = get_ban_arguments(connection, arg)
     try:
@@ -347,6 +368,7 @@ def set_balance(connection, value):
         connection.name, value))
 
 @name('togglebuild')
+@alias('tb')
 @admin
 def toggle_build(connection, player = None):
     if player is not None:
@@ -366,6 +388,7 @@ def toggle_build(connection, player = None):
         on_off))
     
 @name('togglekill')
+@alias('tk')
 @admin
 def toggle_kill(connection, player = None):
     if player is not None:
@@ -868,6 +891,9 @@ command_list = [
     who_was,
     fog,
     ban,
+    hban,
+    dban,
+    wban,
     banip,
     unban,
     undo_ban,
@@ -942,7 +968,7 @@ for command_func in command_list:
 try:
     import pygeoip
     database = pygeoip.GeoIP('./data/GeoLiteCity.dat')
-    
+    @admin
     @name('from')
     def where_from(connection, value = None):
         if value is None:
