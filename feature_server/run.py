@@ -83,9 +83,6 @@ from feature import FeatureConnection, FeatureProtocol, FeatureTeam
 
 FeatureProtocol.server_version = SERVER_VERSION
 
-CHAT_WINDOW_SIZE = 5
-CHAT_PER_SECOND = 0.5
-
 PORT = 32887
 
 # apply scripts
