@@ -83,8 +83,6 @@ from feature import FeatureConnection, FeatureProtocol, FeatureTeam
 
 FeatureProtocol.server_version = SERVER_VERSION
 
-PORT = 32887
-
 # apply scripts
 
 protocol_class = FeatureProtocol
@@ -114,11 +112,7 @@ for script in script_objects:
 
 protocol_class.connection_class = connection_class
 
-interface = config.get('network_interface', '')
-if interface == '':
-    interface = '*'
-
-protocol_instance = protocol_class(interface, config)
+protocol_instance = protocol_class(config)
 print 'Started server...'
 
 if profile:

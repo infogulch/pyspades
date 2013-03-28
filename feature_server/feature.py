@@ -467,8 +467,9 @@ class FeatureProtocol(ServerProtocol):
     
     server_version = None
     
-    def __init__(self, interface, config):
+    def __init__(self, config):
         self.config = config
+        
         if config.get('random_rotation', False):
             self.map_rotator_type = random_choice_cycle
         else:
@@ -577,7 +578,7 @@ class FeatureProtocol(ServerProtocol):
                 commands.add_rights(func_name, user_type)
         
         port = self.port = config.get('port', 32887)
-        ServerProtocol.__init__(self, port, interface)
+        ServerProtocol.__init__(self, port, config['network_interface'])
         self.host.receiveCallback = self.receive_callback
         ret = self.set_map_rotation(config['maps'])
         if not ret:
