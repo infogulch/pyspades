@@ -79,40 +79,11 @@ if sys.version_info < (2, 7):
         print '(optional: install psyco for optimizations)'
 
 from twisted.internet import reactor
-from feature import FeatureConnection, FeatureProtocol, FeatureTeam
+from feature import FeatureProtocol
 
 FeatureProtocol.server_version = SERVER_VERSION
 
-# apply scripts
-
-protocol_class = FeatureProtocol
-connection_class = FeatureConnection
-
-script_objects = []
-script_names = config.get('scripts', [])
-game_mode = config.get('game_mode', 'ctf')
-if game_mode not in ('ctf', 'tc'):
-    # must be a script with this game mode
-    script_names.append(game_mode)
-
-script_names = config.get('scripts', [])
-
-for script in script_names[:]:
-    try:
-        module = __import__('scripts.%s' % script, globals(), locals(), 
-            [script])
-        script_objects.append(module)
-    except ImportError, e:
-        print "(script '%s' not found: %r)" % (script, e)
-        script_names.remove(script)
-
-for script in script_objects:
-    protocol_class, connection_class = script.apply_script(protocol_class,
-        connection_class, config)
-
-protocol_class.connection_class = connection_class
-
-protocol_instance = protocol_class(config)
+protocol_instance = FeatureProtocol(config)
 print 'Started server...'
 
 if profile:
