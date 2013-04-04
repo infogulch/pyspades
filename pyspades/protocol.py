@@ -90,7 +90,6 @@ class BaseProtocol(object):
         self.connections = {}
         self.clients = {}
         self.events = Events()
-        self.script_recorders = {}
         self.subscribe_events()
     
     def subscribe_events(self):

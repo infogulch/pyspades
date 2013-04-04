@@ -601,6 +601,8 @@ class FeatureProtocol(ServerProtocol):
         get_external_ip(config.get('network_interface', '')).addCallback(
             self.got_external_ip)
         
+        self.script_recorders = {}
+        
         for fname in os.listdir("./core"):
             if fname.endswith(".py") and fname != '__init__.py':
                 self.events.invoke('load_script', fname[:-3], "core")
