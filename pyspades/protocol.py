@@ -16,10 +16,11 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 from twisted.internet import reactor
-from pyspades.bytes import ByteReader, ByteWriter
 from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
+from pyspades.bytes import ByteReader, ByteWriter
 from pyspades.common import hexify, stringify, binify
+from pyspades.events import Events
 import enet
 
 import math
@@ -88,6 +89,12 @@ class BaseProtocol(object):
         self.update_loop.start(update_interval, False)
         self.connections = {}
         self.clients = {}
+        self.events = Events()
+        self.script_recorders = {}
+        self.subscribe_events()
+    
+    def subscribe_events(self):
+        pass
     
     def connect(self, connection_class, host, port, version, channel_count = 1,
                 timeout = 5.0):
