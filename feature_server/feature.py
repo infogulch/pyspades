@@ -63,6 +63,11 @@ def open_create(filename, mode):
     create_filename_path(filename)
     return open(filename, mode)
 
+def pop_modules(parts):
+    while parts:
+        sys.modules.pop(".".join(parts), None)
+        parts = parts[:-1]
+
 class EndCall(object):
     active = True
     def __init__(self, protocol, delay, func, *arg, **kw):
@@ -595,6 +600,51 @@ class FeatureProtocol(ServerProtocol):
         
         get_external_ip(config.get('network_interface', '')).addCallback(
             self.got_external_ip)
+        
+        for fname in os.listdir("./core"):
+            if fname.endswith(".py") and fname != '__init__.py':
+                self.events.invoke('load_script', fname[:-3], "core")
+        print 'Core scripts loaded...'
+        
+        for name in config.get('scripts', []):
+            self.events.invoke('load_script', name)
+        print 'User scripts loaded...'
+    
+    def load_script(self, name, module = "scripts"):
+        parts = module, name
+        error = None
+        try:
+            if parts in self.script_recorders:
+                raise ImportError("Script already loaded")
+            module = __import__(".".join(parts), globals(), locals(), ["script"])
+            recorder = self.events.recorder()
+            module.apply_script(recorder)
+        except ImportError as e:
+            error = "Script '%s' not loaded: %r" % (".".join(parts), e)
+        except (AttributeError, TypeError, Exception) as e:
+            error = "Script '%s' not loaded: %r" % (".".join(parts), e)
+            pop_modules(parts)
+        else:
+            self.script_recorders[parts] = recorder
+        if error:
+            print error
+            return error
+    
+    def unload_script(self, name, module = "scripts"):
+        parts = module, name
+        if parts in self.script_recorders:
+            self.script_recorders[parts].unsubscribe_all()
+            self.script_recorders.pop(parts, None)
+            pop_modules(parts)
+        else:
+            error = "Script '%s' not unloaded: it doesn't exist" % (name)
+            print error
+            return error
+    
+    def subscribe_events(self):
+        ServerProtocol.subscribe_events(self)
+        self.events.subscribe(self.load_script)
+        self.events.subscribe(self.unload_script)
     
     def got_external_ip(self, ip):
         self.ip = ip
