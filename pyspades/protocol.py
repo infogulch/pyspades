@@ -32,6 +32,7 @@ class BaseConnection(object):
     def __init__(self, protocol, peer):
         self.protocol = protocol
         self.peer = peer
+        self.invoke = self.protocol.events.invoke
     
     def timed_out(self):
         self.disconnect()
@@ -91,6 +92,7 @@ class BaseProtocol(object):
         self.connections = {}
         self.clients = {}
         self.events = Events()
+        self.invoke = self.events.invoke
         self.subscribe_events()
     
     def subscribe_events(self):
