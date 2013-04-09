@@ -113,7 +113,7 @@ def get_external_ip(interface = ''):
 
 def get_master_connection(protocol):
     defer = Deferred()
-    connection = protocol.connect(MasterConnection, HOST, PORT, MASTER_VERSION)
+    connection = protocol.master_connect(MasterConnection, HOST, PORT, MASTER_VERSION)
     connection.server_protocol = protocol
     connection.defer = defer
     return defer

@@ -95,8 +95,8 @@ class BaseProtocol(object):
     def subscribe_events(self):
         pass
     
-    def connect(self, connection_class, host, port, version, channel_count = 1,
-                timeout = 5.0):
+    def master_connect(self, connection_class, host, port, version
+                , channel_count = 1, timeout = 5.0):
         peer = self.host.connect(enet.Address(host, port), channel_count, 
             version)
         connection = connection_class(self, peer)
