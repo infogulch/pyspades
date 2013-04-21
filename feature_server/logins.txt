@@ -1,0 +1,9 @@
+{
+    "public": {
+        "rights": ["login", "help"]
+    },
+    "admin": {
+        "passwords": ["replaceme"],
+        "rights": ["loadscript", "unloadscript", "reloadlogins"]
+    }
+}
