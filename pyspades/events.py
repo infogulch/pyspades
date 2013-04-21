@@ -36,7 +36,7 @@ class Events(object):
         cname = args.pop(0) if len(args) else None
         level = args.pop(0) if len(args) and args[0] in self.EVENT_LEVELS else self.default
         def sub(func):
-            name = (cname or func.__name__).lower()
+            name = str(cname or func.__name__).lower()
             if not self.events.has_key(name):
                 self.events.setdefault(name, (set(), set(), set()))
             self._subscribe(func, name, level)
@@ -49,7 +49,7 @@ class Events(object):
             self.events.pop(name)
     
     def unsubscribe(self, func, name = None, level = None):
-        name = name.lower()
+        name = str(name or func.__name__).lower()
         if level not in self.EVENT_LEVELS:
             level = self.default
         if self.events.has_key(name):
