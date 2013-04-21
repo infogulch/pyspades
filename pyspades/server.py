@@ -74,10 +74,7 @@ block_line = loaders.BlockLine()
 weapon_input = loaders.WeaponInput()
 
 def check_nan(*values):
-    for value in values:
-        if math.isnan(value):
-            return True
-    return False
+    return any(math.isnan(v) for v in values)
 
 def parse_command(input):
     value = encode(input)
@@ -606,7 +603,7 @@ class ServerConnection(BaseConnection):
             return
         value = contained.value
         if value.startswith('/'):
-            self.on_command(*parse_command(value[1:]))
+            self.invoke('command', self, *parse_command(value[1:]))
         else:
             global_message = contained.chat_type == CHAT_ALL
             result = self.on_chat(value, global_message)

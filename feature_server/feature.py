@@ -45,7 +45,6 @@ from pyspades.exceptions import InvalidData
 from pyspades.bytes import NoDataLeft
 from pyspades.constants import *
 
-import commands
 from scheduler import Scheduler
 from map import Map, MapNotFound, check_rotation
 
@@ -161,8 +160,8 @@ class FeatureConnection(ServerConnection):
             self.address[0], self.player_id)
         self.protocol.irc_say('* %s entered the game' % self.name)
         if self.user_types is None:
-            self.user_types = AttributeSet()
-            self.rights = AttributeSet()
+            self.user_types = set()
+            self.user_types.add('public')
             if self.protocol.everyone_is_admin:
                 self.on_user_login('admin', False)
     
@@ -182,17 +181,6 @@ class FeatureConnection(ServerConnection):
         else:
             print '%s disconnected' % self.address[0]
         ServerConnection.on_disconnect(self)
-    
-    def on_command(self, command, parameters):
-        result = commands.handle_command(self, command, parameters)
-        if result == False:
-            parameters = ['***'] * len(parameters)
-        log_message = '<%s> /%s %s' % (self.name, command, 
-            ' '.join(parameters))
-        if result:
-            log_message += ' -> %s' % result
-            self.send_chat(result)
-        print log_message.encode('ascii', 'replace')
     
     def _can_build(self):
         if not self.building:
@@ -411,8 +399,6 @@ class FeatureConnection(ServerConnection):
             self.admin = True
             self.speedhack_detect = False
         self.user_types.add(user_type)
-        rights = set(commands.rights.get(user_type, ()))
-        self.rights.update(rights)
         if verbose:
             message = ' logged in as %s' % (user_type)
             self.send_chat('You' + message)
@@ -577,10 +563,6 @@ class FeatureProtocol(ServerProtocol):
                 print 'REMEMBER TO CHANGE THE DEFAULT ADMINISTRATOR PASSWORD!'
             elif not password:
                 self.everyone_is_admin = True
-
-        for user_type, func_names in config.get('rights', {}).iteritems():
-            for func_name in func_names:
-                commands.add_rights(func_name, user_type)
         
         port = self.port = config.get('port', 32887)
         ServerProtocol.__init__(self, port, config['network_interface'])
@@ -611,6 +593,8 @@ class FeatureProtocol(ServerProtocol):
         for name in config.get('scripts', []):
             self.events.invoke('load_script', name)
         print 'User scripts loaded...'
+        
+        self.events.invoke('init', self)
     
     def load_script(self, name, module = "scripts"):
         parts = module, name

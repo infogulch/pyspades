@@ -76,14 +76,6 @@
         "name" : "Green",
         "color" : [0, 255, 0]
     },
-    "passwords" : {
-        "admin" : ["replaceme"],
-        "trusted" : [],
-        "builder" : []
-    },
-    "rights" : {
-        "builder" : ["god", "goto"]
-    },
     "ssh" : {
         "enabled" : false,
         "port" : 32887,
