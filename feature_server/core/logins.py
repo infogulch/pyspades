@@ -74,8 +74,7 @@ def apply_script(events):
         for type in connection.user_types:
             if command in logins[type]['rights']:
                 return    # allow it
-        connection.send_chat("You can't use this command")
-        print '<%s> /%s %s -> Permissions error' % (conn.name, command, ' '.join(args))
+        return "You can't use this command."
     
     events.subscribe(command, None, events.BLOCK)
     events.subscribe(login, None, events.CONSUME)

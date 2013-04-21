@@ -16,7 +16,7 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
-import commands
+from commandtools import parse_command
 from twisted.internet import reactor
 from twisted.protocols.basic import LineReceiver
 from pyspades.types import AttributeSet
@@ -68,18 +68,14 @@ class ConsoleInput(LineReceiver):
     name = 'Console'
     admin = True
     delimiter = '\n'
-
+    
     def __init__(self, protocol):
         self.protocol = protocol
-        self.user_types = AttributeSet(['admin', 'console'])
-        self.rights = AttributeSet()
-        for user_type in self.user_types:
-            self.rights.update(commands.rights.get(user_type, ()))
+        self.user_types = set(['admin', 'console'])
 
     def lineReceived(self, line):
         if line.startswith('/'):
-            line = line[1:]
-            result = commands.handle_input(self, line)
+            result = self.protocol.invoke('command', self, *parse_command(line[1:]))
             if result is not None:
                 print result
         else:

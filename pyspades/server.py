@@ -1,4 +1,4 @@
-# Copyright (c) Mathias Kaerlev 2011-2012.
+ # Copyright (c) Mathias Kaerlev 2011-2012.
 
 # This file is part of pyspades.
 
@@ -29,11 +29,11 @@ from pyspades.collision import vector_collision, collision_3d
 from pyspades import world
 from pyspades.debug import *
 from pyspades.weapon import WEAPONS
+from commandtools import parse_command
 import enet
 
 import random
 import math
-import shlex
 import textwrap
 import collections
 import zlib
@@ -75,20 +75,6 @@ weapon_input = loaders.WeaponInput()
 
 def check_nan(*values):
     return any(math.isnan(v) for v in values)
-
-def parse_command(input):
-    value = encode(input)
-    try:
-        splitted = shlex.split(value)
-    except ValueError:
-        # shlex failed. let's just split per space
-        splitted = value.split(' ')
-    if splitted:
-        command = splitted.pop(0)
-    else:
-        command = ''
-    splitted = [decode(value) for value in splitted]
-    return decode(command), splitted
 
 class SlidingWindow(object):
     def __init__(self, entries):
@@ -603,7 +589,11 @@ class ServerConnection(BaseConnection):
             return
         value = contained.value
         if value.startswith('/'):
-            self.invoke('command', self, *parse_command(value[1:]))
+            log_message = '<%s> %s' % (self.name, value)
+            result = self.invoke('command', self, *parse_command(value[1:]))
+            if result:
+                self.send_chat(result)
+            print log_message + ' -> %s' % result
         else:
             global_message = contained.chat_type == CHAT_ALL
             result = self.on_chat(value, global_message)
