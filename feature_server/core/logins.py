@@ -10,6 +10,7 @@ class LoadLoginsError(Exception):
 
 def eval_rights(logins, user):
     user.setdefault('rights', set())
+    user.setdefault('passwords', set())
     groups = user.get('groups', None)
     while groups:
         group = groups.pop()
@@ -23,6 +24,7 @@ def get_logins(filename):
     # convert arrays to sets for easier member checking
     if type(logins) != dict:
         raise LoadLoginsError("logins.txt must be a dict")
+    logins.setdefault('admin', {})
     for name, login in logins.iteritems():
         if type(login) != dict:
             raise LoadLoginsError("login '%s' must be a dict" % name)
@@ -35,7 +37,7 @@ def get_logins(filename):
     # expand rights from group membership recursively
     for name in logins:
         eval_rights(logins, logins[name])
-    if 'replaceme' in logins.get('admin', {}).get('passwords', set()):
+    if 'replaceme' in logins['admin']['passwords']:
         logins['admin']['passwords'].remove('replaceme')
         logins['admin']['passwords'].add(default_admin_password)
         print "Admin password changed to: %s" % default_admin_password
@@ -59,15 +61,15 @@ def apply_script(events):
     events.subscribe(reload_logins, None, events.CONSUME)
     
     def login(connection, username, password):
-        username = str(username).lower()
         if username in connection.user_types:
             return "User already logged in"
         login = connection.protocol.logins.get(username, None)
         if not login:
             return "Invalid username"
-        if 'passwords' not in login or password not in login['passwords']:
+        if password not in login['passwords']:
             return "Invalid password"
         connection.user_types.add(username)
+        return "Successfully logged in as %s" % username
     
     def command(connection, command, args):
         logins = connection.protocol.logins
