@@ -15,6 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
+POWERTHIRST = False # Set this to True if you want 64-player support and whatnot (requires Powerthirst Edition)
+
+SUPER_MAX_PLAYERS = 32
+MAX_NAME_LENGTH = 15
+
+if POWERTHIRST:
+    SUPER_MAX_PLAYERS = 64
+    MAX_NAME_LENGTH = 31
+
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from pyspades.protocol import BaseConnection, BaseProtocol
@@ -201,6 +210,7 @@ class ServerConnection(BaseConnection):
     last_block = None
     map_data = None
     last_position_update = None
+    local = False
     
     def __init__(self, *arg, **kw):
         BaseConnection.__init__(self, *arg, **kw)
@@ -212,10 +222,12 @@ class ServerConnection(BaseConnection):
         self.rapids = SlidingWindow(RAPID_WINDOW_ENTRIES)
     
     def on_connect(self):
+        if self.local:
+            return
         if self.peer.eventData != self.protocol.version:
             self.disconnect(ERROR_WRONG_VERSION)
             return
-        max_players = min(32, self.protocol.max_players)
+        max_players = min(SUPER_MAX_PLAYERS, self.protocol.max_players)
         if len(self.protocol.connections) > max_players:
             self.disconnect(ERROR_FULL)
             return
@@ -277,6 +289,10 @@ class ServerConnection(BaseConnection):
                         return
                     if returned is not None:
                         x, y, z = returned
+                    if abs(x**2 + y**2 + z**2 - 1.0) > 0.005 and self.team != self.protocol.spectator_team and (self.user_types is None or 'admin' not in self.user_types):
+                        self.on_hack_attempt(
+                            'Ghetto hack detected %s' % self.user_types)
+                        return
                     world_object.set_orientation(x, y, z)
                 elif contained.id == loaders.PositionData.id:
                     current_time = reactor.seconds()
@@ -1092,7 +1108,7 @@ class ServerConnection(BaseConnection):
     def send_data(self, data):
         self.protocol.transport.write(data, self.address)
     
-    def send_chat(self, value, global_message = None):
+    def send_chat(self, value, global_message = None, color = 0):
         if self.deaf:
             return
         if global_message is None:
@@ -1101,7 +1117,9 @@ class ServerConnection(BaseConnection):
         else:
             chat_message.chat_type = CHAT_TEAM
             # 34 is guaranteed to be out of range!
-            chat_message.player_id = 35
+            # Yeah, Right (even a value of 67 works fine in an unmodded client) --GM
+	    # the color= value is for the Powerthirst Edition only, it will be blue on vanilla --GM
+            chat_message.player_id = SUPER_MAX_PLAYERS+3+(color%8)
             prefix = self.protocol.server_prefix + ' '
         lines = textwrap.wrap(value, MAX_CHAT_SIZE - len(prefix) - 1)
         for line in lines:
@@ -1448,7 +1466,7 @@ class ServerProtocol(BaseProtocol):
 
     name = 'pyspades server'
     game_mode = CTF_MODE
-    max_players = 32
+    max_players = SUPER_MAX_PLAYERS
     connections = None
     player_ids = None
     master = False
@@ -1586,7 +1604,7 @@ class ServerProtocol(BaseProtocol):
     
     def update_network(self):
         items = []
-        for i in xrange(32):
+        for i in xrange(SUPER_MAX_PLAYERS):
             position = orientation = None
             try:
                 player = self.players[i]
@@ -1653,12 +1671,12 @@ class ServerProtocol(BaseProtocol):
     
     def get_name(self, name):
         name = name.replace('%', '').encode('ascii', 'ignore')
-        new_name = name
+        new_name = name[:MAX_NAME_LENGTH]
         names = [p.name.lower() for p in self.players.values()]
         i = 0
         while new_name.lower() in names:
             i += 1
-            new_name = name + str(i)
+            new_name = name[:MAX_NAME_LENGTH-len(str(i))] + str(i)
         return new_name
     
     def get_mode_mode(self):
@@ -1718,7 +1736,7 @@ class ServerProtocol(BaseProtocol):
                 entity.update()
     
     def send_chat(self, value, global_message = None, sender = None,
-                  team = None):
+                  team = None, color = 0):
         for player in self.players.values():
             if player is sender:
                 continue
@@ -1726,7 +1744,7 @@ class ServerProtocol(BaseProtocol):
                 continue
             if team is not None and player.team is not team:
                 continue
-            player.send_chat(value, global_message)
+            player.send_chat(value, global_message, color = color)
     
     def set_fog_color(self, color):
         self.fog_color = color
