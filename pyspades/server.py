@@ -893,6 +893,11 @@ class ServerConnection(BaseConnection):
         self.send_contained(set_hp)
     
     def set_weapon(self, weapon, local = False, no_kill = False):
+        weapon = max(0,min(2,weapon))
+        if POWERTHIRST:
+            weapon += 3
+            if weapon == 5:
+                weapon = 2 # this is still being worked on.
         self.weapon = weapon
         if self.weapon_object is not None:
             self.weapon_object.reset()
