@@ -211,6 +211,13 @@ def say(connection, *arg):
     connection.protocol.send_chat(value)
     connection.protocol.irc_say(value)
 
+@admin
+def csay(connection, color, *arg):
+    value = ' '.join(arg)
+    color = int(color)
+    connection.protocol.send_chat(value, color = color)
+    connection.protocol.irc_say(value)
+
 add_rights('kill', 'admin')
 def kill(connection, value = None):
     if value is None:
@@ -888,6 +895,7 @@ command_list = [
     deaf,
     global_chat,
     say,
+    csay,
     kill,
     heal,
     lock,
