@@ -62,8 +62,8 @@ player_left = loaders.PlayerLeft()
 block_action = loaders.BlockAction()
 kill_action = loaders.KillAction()
 chat_message = loaders.ChatMessage()
-map_data = loaders.MapChunk()
-map_start = loaders.MapStart()
+map_data = loaders.MapChunkPT() if POWERTHIRST else loaders.MapChunk()
+map_start = loaders.MapStartPT() if POWERTHIRST else loaders.MapStart()
 state_data = loaders.StateData()
 ctf_data = loaders.CTFState()
 tc_data = loaders.TCState()
@@ -1089,6 +1089,8 @@ class ServerConnection(BaseConnection):
         if data is not None:
             self.map_data = data
             map_start.size = data.get_size()
+	    if POWERTHIRST:
+	        map_start.version = PT_VERSION
             self.send_contained(map_start)
         elif self.map_data is None:
             return

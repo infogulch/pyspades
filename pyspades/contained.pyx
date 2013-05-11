@@ -632,6 +632,18 @@ cdef class MapStart(Loader):
         reader.writeByte(self.id, True)
         reader.writeInt(self.size, True, False)
 
+cdef class MapStartPT(MapStart):
+    cdef public:
+        unsigned int version
+    
+    cpdef read(self, ByteReader reader):
+        MapStart.read(self, reader)
+        self.version = reader.readInt(True, False)
+    
+    cpdef write(self, ByteWriter reader):
+        MapStart.write(self, reader)
+        reader.writeInt(self.version, True, False)
+
 cdef class MapChunk(Loader):
     id = id_iter.next()
     
@@ -644,6 +656,9 @@ cdef class MapChunk(Loader):
     cpdef write(self, ByteWriter reader):
         reader.writeByte(self.id, True)
         reader.write(self.data)
+
+cdef class MapChunkPT(MapChunk):
+    id = MapChunk.id - 2
 
 cdef class PlayerLeft(Loader):
     id = id_iter.next()
