@@ -39,6 +39,8 @@ from pyspades import world
 from pyspades.debug import *
 from pyspades.weapon import WEAPONS
 import enet
+import cStringIO as stringio
+import struct
 
 import random
 import math
@@ -81,6 +83,10 @@ progress_bar = loaders.ProgressBar()
 world_update = loaders.WorldUpdate()
 block_line = loaders.BlockLine()
 weapon_input = loaders.WeaponInput()
+ascript_start = loaders.ScriptStartPT()
+ascript_chunk = loaders.ScriptChunkPT()
+ascript_end = loaders.ScriptEndPT()
+ascript_call = loaders.ScriptCallPT()
 
 def check_nan(*values):
     for value in values:
@@ -209,6 +215,7 @@ class ServerConnection(BaseConnection):
     world_object = None
     last_block = None
     map_data = None
+    ascript_data = None
     last_position_update = None
     local = False
     
@@ -767,6 +774,7 @@ class ServerConnection(BaseConnection):
         else:
             self.protocol.send_contained(create_player, save = True)
         if not spectator:
+            self.call_ascript("void on_spawn()", [])
             self.on_spawn((x, y, z))
 
     def take_flag(self):
@@ -945,6 +953,8 @@ class ServerConnection(BaseConnection):
     
     def _connection_ack(self):
         self._send_connection_data()
+        if POWERTHIRST:
+            self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int, string &in)", [(ASP_INT, self.player_id), (ASP_PSTRING, "test")])
         self.send_map(ProgressiveMapGenerator(self.protocol.map))
     
     def _send_connection_data(self):
@@ -1084,13 +1094,61 @@ class ServerConnection(BaseConnection):
         weapon_reload.clip_ammo = self.weapon_object.current_ammo
         weapon_reload.reserve_ammo = self.weapon_object.current_stock
         self.send_contained(weapon_reload)
+
+    def call_ascript(self, fn, adata):
+        if POWERTHIRST:
+            data = ""
+            for (t, d) in adata:
+                data += chr(t)
+                if t == ASP_INT:
+                    data += struct.pack("<I", d&0xFFFFFFFF)
+                elif t == ASP_FLOAT:
+                    data += struct.pack("<f", d)
+                elif t == ASP_PSTRING:
+                    d = d[:255]
+                    data += chr(len(d)) + d
+                else:
+                    raise Exception("Unsupported argument type %s" % repr(t))
+
+            data += "\x00"
+            ascript_call.name = fn
+            ascript_call.data = data
+            self.send_contained(ascript_call)
     
+    def send_ascript(self, data = None, name = None, call = None, args = None):
+        #return # disabled for now
+        if data is not None:
+            self.ascript_data = data
+            self.ascript_name = name
+	    self.ascript_call = call
+	    self.ascript_args = args
+            ascript_start.size = len(data.read())
+	    ascript_start.name = name
+	    data.seek(0)
+            self.send_contained(ascript_start)
+        elif self.ascript_data is None:
+            return
+            
+        if self.ascript_data == True:
+            self.ascript_data = None
+	    ascript_end.name = self.ascript_name
+	    self.send_contained(ascript_end)
+            self.call_ascript(self.ascript_call, self.ascript_args)
+            return
+        for _ in xrange(10):
+            s = self.ascript_data.read(1024)
+            if s == "":
+                self.ascript_data = True
+                break
+            ascript_chunk.data = s
+            self.send_contained(ascript_chunk)
+
     def send_map(self, data = None):
         if data is not None:
             self.map_data = data
             map_start.size = data.get_size()
-	    if POWERTHIRST:
-	        map_start.version = PT_VERSION
+            if POWERTHIRST:
+                map_start.version = PT_VERSION
             self.send_contained(map_start)
         elif self.map_data is None:
             return
@@ -1112,6 +1170,9 @@ class ServerConnection(BaseConnection):
     def continue_map_transfer(self):
         self.send_map()
     
+    def continue_ascript_transfer(self):
+        self.send_ascript()
+    
     def send_data(self, data):
         self.protocol.transport.write(data, self.address)
     
@@ -1125,7 +1186,7 @@ class ServerConnection(BaseConnection):
             chat_message.chat_type = CHAT_TEAM
             # 34 is guaranteed to be out of range!
             # Yeah, Right (even a value of 67 works fine in an unmodded client) --GM
-	    # the color= value is for the Powerthirst Edition only, it will be blue on vanilla --GM
+            # the color= value is for the Powerthirst Edition only, it will be blue on vanilla --GM
             chat_message.player_id = SUPER_MAX_PLAYERS+3+(color%8)
             prefix = self.protocol.server_prefix + ' '
         lines = textwrap.wrap(value, MAX_CHAT_SIZE - len(prefix) - 1)
@@ -1479,6 +1540,7 @@ class ServerProtocol(BaseProtocol):
     master = False
     max_score = 10
     map = None
+    ascript_main = None
     spade_teamkills_on_grief = False
     friendly_fire = False
     friendly_fire_time = 2
@@ -1526,6 +1588,9 @@ class ServerProtocol(BaseProtocol):
         self.green_team.other = self.blue_team
         self.world = world.World()
         self.set_master()
+        # TODO: move this elsewhere
+        if POWERTHIRST:
+            self.ascript_main = zlib.compress(open("ptscripts/main.as","rb").read(), COMPRESSION_LEVEL)
         
         # safe position LUT
         self.pos_table = []
@@ -1601,7 +1666,10 @@ class ServerProtocol(BaseProtocol):
         self.loop_count += 1
         BaseProtocol.update(self)
         for player in self.connections.values():
-            if (player.map_data is not None and 
+            if (player.ascript_data is not None and 
+            not player.peer.reliableDataInTransit):
+                player.continue_ascript_transfer()
+            elif (player.map_data is not None and 
             not player.peer.reliableDataInTransit):
                 player.continue_map_transfer()
         self.world.update(UPDATE_FREQUENCY)
