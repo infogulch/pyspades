@@ -265,11 +265,13 @@ class ServerConnection(BaseConnection):
                 self.team = team
                 if self.name is None:
                     name = contained.name
-                     # vanilla AoS behaviour
+                    # vanilla AoS behaviour
                     if name == 'Deuce':
                         name = name + str(self.player_id)
                     self.name = self.protocol.get_name(name)
                     self.protocol.players[self.name, self.player_id] = self
+                    if self.name != contained.name:
+                        self.call_ascript("void set_name(int, string &in)", [(ASP_INT, self.player_id), (ASP_PSTRING, self.name)])
                     self.on_login(self.name)
                 else:
                     self.on_team_changed(old_team)
@@ -954,7 +956,7 @@ class ServerConnection(BaseConnection):
     def _connection_ack(self):
         self._send_connection_data()
         if POWERTHIRST:
-            self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int, string &in)", [(ASP_INT, self.player_id), (ASP_PSTRING, "test")])
+            self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int plrid)", [(ASP_INT, self.player_id)])
         self.send_map(ProgressiveMapGenerator(self.protocol.map))
     
     def _send_connection_data(self):
@@ -1624,6 +1626,14 @@ class ServerProtocol(BaseProtocol):
                     player.saved_loaders.append(data)
             else:
                 player.peer.send(0, packet)
+    def call_ascript(self, *args, **kwargs):
+        for i in xrange(SUPER_MAX_PLAYERS):
+            position = orientation = None
+            try:
+                player = self.players[i]
+                player.call_ascript(*args, **kwargs)
+            except (KeyError, TypeError, AttributeError):
+                pass
     
     def reset_tc(self):
         self.entities = self.get_cp_entities()
