@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
-POWERTHIRST = False # Set this to True if you want 64-player support and whatnot (requires Powerthirst Edition)
+POWERTHIRST = True # Set this to True if you want 64-player support and whatnot (requires Powerthirst Edition)
 
 SUPER_MAX_PLAYERS = 32
 MAX_NAME_LENGTH = 15
