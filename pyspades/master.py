@@ -22,7 +22,7 @@ from pyspades.common import *
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from pyspades.bytes import ByteReader
-from pyspades.constants import MASTER_VERSION
+from pyspades.constants import *
 
 import random
 
