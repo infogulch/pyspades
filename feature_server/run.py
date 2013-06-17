@@ -544,6 +544,10 @@ class FeatureProtocol(ServerProtocol):
             self.map_rotator_type = random_choice_cycle
         else:
             self.map_rotator_type = itertools.cycle
+        self.powerthirst = config.get('powerthirst', False)
+        if self.powerthirst:
+            self.max_name_length = 31
+            self.super_max_players = 64
         self.default_time_limit = config.get('default_time_limit', 20.0)
         self.default_cap_limit = config.get('cap_limit', 10.0)
         self.advance_on_win = int(config.get('advance_on_win', False))

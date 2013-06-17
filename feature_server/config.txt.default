@@ -1,5 +1,6 @@
 {
     "name" : "PySnip server",
+    "powerthirst" : false,
     "motd" : [
         "Welcome to %(server_name)s",
         "Map: %(map_name)s by %(map_author)s",
@@ -24,7 +25,7 @@
         "Cheating isn't welcome. Griefing is frowned upon. Have fun!"
     ],
     "master" : true,
-    "max_players" : 32,
+    "max_players" : 64,
     "max_connections_per_ip" : 3,
     "port" : 32887,
     "network_interface" : "",

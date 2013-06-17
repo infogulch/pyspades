@@ -112,7 +112,8 @@ import socket
 def get_master_connection(protocol):
     defer = Deferred()
     master_ip = socket.gethostbyname(HOST)
-    connection = protocol.connect(MasterConnection, master_ip, PORT, MASTER_VERSION)
+    connection = protocol.connect(MasterConnection, master_ip, PORT, 0x54500000 | PT_VERSION if protocol.powerthirst else MASTER_VERSION)
     connection.server_protocol = protocol
     connection.defer = defer
     return defer
+

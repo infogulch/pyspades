@@ -234,10 +234,10 @@ def kill(connection, value = None):
 
 @admin
 def sanick(connection, player, nick):
-    if not server.POWERTHIRST:
+    if not connection.protocol.powerthirst:
         return "This command is not supported in vanilla mode"
     player = get_player(connection.protocol, player, False)
-    nick = nick[:server.MAX_NAME_LENGTH]
+    nick = nick[:connection.protocol.max_name_length]
     s = "%s #%i is now known as %s" % (player.name, player.player_id, nick)
     player.name = nick
     connection.protocol.call_ascript("void set_name(int, string &in)", [(ASP_INT, player.player_id), (ASP_PSTRING, player.name)])

@@ -15,14 +15,10 @@
 # You should have received a copy of the GNU General Public License
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
-POWERTHIRST = True # Set this to True if you want 64-player support and whatnot (requires Powerthirst Edition)
-
 SUPER_MAX_PLAYERS = 32
+SUPER_MAX_PLAYERS_PT = 64
 MAX_NAME_LENGTH = 15
-
-if POWERTHIRST:
-    SUPER_MAX_PLAYERS = 64
-    MAX_NAME_LENGTH = 31
+MAX_NAME_LENGTH_PT = 31
 
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
@@ -64,8 +60,10 @@ player_left = loaders.PlayerLeft()
 block_action = loaders.BlockAction()
 kill_action = loaders.KillAction()
 chat_message = loaders.ChatMessage()
-map_data = loaders.MapChunkPT() if POWERTHIRST else loaders.MapChunk()
-map_start = loaders.MapStartPT() if POWERTHIRST else loaders.MapStart()
+map_data_pt = loaders.MapChunkPT()
+map_data = loaders.MapChunk()
+map_start_pt = loaders.MapStartPT() 
+map_start = loaders.MapStart()
 state_data = loaders.StateData()
 ctf_data = loaders.CTFState()
 tc_data = loaders.TCState()
@@ -234,7 +232,7 @@ class ServerConnection(BaseConnection):
         if self.peer.eventData != self.protocol.version:
             self.disconnect(ERROR_WRONG_VERSION)
             return
-        max_players = min(SUPER_MAX_PLAYERS, self.protocol.max_players)
+        max_players = min(self.protocol.super_max_players, self.protocol.max_players)
         if len(self.protocol.connections) > max_players:
             self.disconnect(ERROR_FULL)
             return
@@ -904,7 +902,7 @@ class ServerConnection(BaseConnection):
     
     def set_weapon(self, weapon, local = False, no_kill = False):
         weapon = max(0,min(2,weapon))
-        if POWERTHIRST:
+        if self.protocol.powerthirst:
             weapon += 3
             if weapon == 5:
                 weapon = 2 # this is still being worked on.
@@ -955,7 +953,7 @@ class ServerConnection(BaseConnection):
     
     def _connection_ack(self):
         self._send_connection_data()
-        if POWERTHIRST:
+        if self.protocol.powerthirst:
             self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int plrid)", [(ASP_INT, self.player_id)])
         self.send_map(ProgressiveMapGenerator(self.protocol.map))
     
@@ -1098,7 +1096,7 @@ class ServerConnection(BaseConnection):
         self.send_contained(weapon_reload)
 
     def call_ascript(self, fn, adata):
-        if POWERTHIRST:
+        if self.protocol.powerthirst:
             data = ""
             for (t, d) in adata:
                 data += chr(t)
@@ -1148,10 +1146,13 @@ class ServerConnection(BaseConnection):
     def send_map(self, data = None):
         if data is not None:
             self.map_data = data
-            map_start.size = data.get_size()
-            if POWERTHIRST:
-                map_start.version = PT_VERSION
-            self.send_contained(map_start)
+            if self.protocol.powerthirst:
+                map_start_pt.size = data.get_size()
+                map_start_pt.version = PT_VERSION
+                self.send_contained(map_start_pt)
+            else:
+                map_start.size = data.get_size()
+                self.send_contained(map_start)
         elif self.map_data is None:
             return
             
@@ -1166,8 +1167,12 @@ class ServerConnection(BaseConnection):
         for _ in xrange(10):
             if not self.map_data.data_left():
                 break
-            map_data.data = self.map_data.read(1024)
-            self.send_contained(map_data)
+            if self.protocol.powerthirst:
+                map_data_pt.data = self.map_data.read(1024)
+                self.send_contained(map_data_pt)
+            else:
+                map_data.data = self.map_data.read(1024)
+                self.send_contained(map_data)
     
     def continue_map_transfer(self):
         self.send_map()
@@ -1189,7 +1194,7 @@ class ServerConnection(BaseConnection):
             # 34 is guaranteed to be out of range!
             # Yeah, Right (even a value of 67 works fine in an unmodded client) --GM
             # the color= value is for the Powerthirst Edition only, it will be blue on vanilla --GM
-            chat_message.player_id = SUPER_MAX_PLAYERS+3+(color%8)
+            chat_message.player_id = self.protocol.super_max_players+3+(color%8)
             prefix = self.protocol.server_prefix + ' '
         lines = textwrap.wrap(value, MAX_CHAT_SIZE - len(prefix) - 1)
         for line in lines:
@@ -1536,7 +1541,10 @@ class ServerProtocol(BaseProtocol):
 
     name = 'pyspades server'
     game_mode = CTF_MODE
+    powerthirst = False
     max_players = SUPER_MAX_PLAYERS
+    super_max_players = SUPER_MAX_PLAYERS
+    max_name_length = MAX_NAME_LENGTH
     connections = None
     player_ids = None
     master = False
@@ -1591,7 +1599,7 @@ class ServerProtocol(BaseProtocol):
         self.world = world.World()
         self.set_master()
         # TODO: move this elsewhere
-        if POWERTHIRST:
+        if self.powerthirst:
             self.ascript_main = zlib.compress(open("ptscripts/main.as","rb").read(), COMPRESSION_LEVEL)
         
         # safe position LUT
@@ -1627,7 +1635,7 @@ class ServerProtocol(BaseProtocol):
             else:
                 player.peer.send(0, packet)
     def call_ascript(self, *args, **kwargs):
-        for i in xrange(SUPER_MAX_PLAYERS):
+        for i in xrange(self.super_max_players):
             position = orientation = None
             try:
                 player = self.players[i]
@@ -1689,7 +1697,7 @@ class ServerProtocol(BaseProtocol):
     
     def update_network(self):
         items = []
-        for i in xrange(SUPER_MAX_PLAYERS):
+        for i in xrange(self.super_max_players):
             position = orientation = None
             try:
                 player = self.players[i]
@@ -1756,12 +1764,12 @@ class ServerProtocol(BaseProtocol):
     
     def get_name(self, name):
         name = name.replace('%', '').encode('ascii', 'ignore')
-        new_name = name[:MAX_NAME_LENGTH]
+        new_name = name[:self.max_name_length]
         names = [p.name.lower() for p in self.players.values()]
         i = 0
         while new_name.lower() in names:
             i += 1
-            new_name = name[:MAX_NAME_LENGTH-len(str(i))] + str(i)
+            new_name = name[:self.max_name_length-len(str(i))] + str(i)
         return new_name
     
     def get_mode_mode(self):
@@ -1861,3 +1869,4 @@ class ServerProtocol(BaseProtocol):
 
     def on_update_entity(self, entity):
         pass
+

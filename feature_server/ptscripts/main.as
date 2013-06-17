@@ -103,14 +103,6 @@ void point_at(player_t @p, float tx, float ty, float tz, float zoom)
 void on_spawn()
 {
 	print("SPAWN\n");
-	for(int i = 0; i < 64; i++)
-	{
-		print("{" + i + "}:");
-		for(int j = 0; j < 8; j++)
-			if(@player_get(i).bones[j].kv6 != null)
-				print(" " + j);
-		print("\n");
-	}
 }
 
 // roughly the BPM of the "fr-025: the.popular.demo" soundtrack
