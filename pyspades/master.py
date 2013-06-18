@@ -28,6 +28,7 @@ import random
 
 STAGING = 0
 PORT = 32886
+PT_PORT = 35054
 
 MAX_SERVER_NAME_SIZE = 31
 MAX_MAP_NAME_SIZE = 20
@@ -112,7 +113,9 @@ import socket
 def get_master_connection(protocol):
     defer = Deferred()
     master_ip = socket.gethostbyname(HOST)
-    connection = protocol.connect(MasterConnection, master_ip, PORT, 0x50540000 | PT_VERSION if protocol.powerthirst else MASTER_VERSION)
+    connection = protocol.connect(MasterConnection, master_ip,
+        PT_PORT if protocol.powerthirst else PORT,
+        0x50540000 | PT_VERSION if protocol.powerthirst else MASTER_VERSION)
     connection.server_protocol = protocol
     connection.defer = defer
     return defer
