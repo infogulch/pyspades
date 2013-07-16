@@ -136,10 +136,34 @@ class Shotgun(BaseWeapon):
         LEGS : 16
     }
 
+class RiflePT(Rifle):
+    pass # nothing we need to change here!
+
+class SMGPT(SMG):
+    delay = 0.075 # 1/15, scaled up a bit for scheduling reasons
+    ammo = 20
+    stock = 120
+    reload_time = 5.0
+    slow_reload = False
+    
+    damage = {
+        TORSO : 30,
+        HEAD : 34,
+        ARMS : 21,
+        LEGS : 21
+    }
+
+class ShotgunPT(Shotgun):
+    # TODO: rebalance this!
+    pass
+
 WEAPONS = {
     RIFLE_WEAPON : Rifle,
     SMG_WEAPON : SMG,
     SHOTGUN_WEAPON : Shotgun,
+    RIFLE_PT_WEAPON : RiflePT,
+    SMG_PT_WEAPON : SMGPT,
+    SHOTGUN_PT_WEAPON : ShotgunPT,
 }
 
 for id, weapon in WEAPONS.iteritems():

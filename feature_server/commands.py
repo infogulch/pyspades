@@ -21,6 +21,7 @@ from random import choice
 from pyspades.constants import *
 from pyspades.common import prettify_timespan
 from pyspades.server import parse_command
+import pyspades.server as server
 from twisted.internet import reactor
 from map import check_rotation
 
@@ -211,6 +212,13 @@ def say(connection, *arg):
     connection.protocol.send_chat(value)
     connection.protocol.irc_say(value)
 
+@admin
+def csay(connection, color, *arg):
+    value = ' '.join(arg)
+    color = int(color)
+    connection.protocol.send_chat(value, color = color)
+    connection.protocol.irc_say(value)
+
 add_rights('kill', 'admin')
 def kill(connection, value = None):
     if value is None:
@@ -223,6 +231,17 @@ def kill(connection, value = None):
     if connection is not player:
         message = '%s killed %s' % (connection.name, player.name)
         connection.protocol.send_chat(message, irc = True)
+
+@admin
+def sanick(connection, player, nick):
+    if not server.POWERTHIRST:
+        return "This command is not supported in vanilla mode"
+    player = get_player(connection.protocol, player, False)
+    nick = nick[:server.MAX_NAME_LENGTH]
+    s = "%s #%i is now known as %s" % (player.name, player.player_id, nick)
+    player.name = nick
+    connection.protocol.call_ascript("void set_name(int, string &in)", [(ASP_INT, player.player_id), (ASP_PSTRING, player.name)])
+    connection.protocol.send_chat(s, irc = True)
 
 @admin
 def heal(connection, player = None):
@@ -902,7 +921,9 @@ command_list = [
     deaf,
     global_chat,
     say,
+    csay,
     kill,
+    sanick,
     heal,
     lock,
     unlock,

@@ -913,10 +913,10 @@ class FeatureProtocol(ServerProtocol):
         reactor.callLater(self.tip_frequency * 60, self.send_tip)
     
     def send_chat(self, value, global_message = True, sender = None,
-                  team = None, irc = False):
+                  team = None, irc = False, color = 0):
         if irc:
             self.irc_say('* %s' % value)
-        ServerProtocol.send_chat(self, value, global_message, sender, team)
+        ServerProtocol.send_chat(self, value, global_message, sender, team, color = color)
 
     # log high CPU usage
     
