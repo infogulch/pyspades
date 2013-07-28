@@ -215,6 +215,7 @@ class ServerConnection(BaseConnection):
     map_data = None
     ascript_data = None
     last_position_update = None
+    iceball_mode = False
     local = False
     
     def __init__(self, *arg, **kw):
@@ -225,11 +226,13 @@ class ServerConnection(BaseConnection):
         self.address = (address.host, address.port)
         self.respawn_time = protocol.respawn_time
         self.rapids = SlidingWindow(RAPID_WINDOW_ENTRIES)
-    
+
     def on_connect(self):
         if self.local:
             return
-        if self.peer.eventData != self.protocol.version:
+        if self.peer.eventData == ICEBALL_ENET_VERSION:
+            self.iceball_mode = True
+        elif self.peer.eventData != self.protocol.version:
             self.disconnect(ERROR_WRONG_VERSION)
             return
         max_players = min(self.protocol.super_max_players, self.protocol.max_players)
@@ -246,8 +249,57 @@ class ServerConnection(BaseConnection):
         if not self.disconnected:
             self._connection_ack()
     
-    def loader_received(self, loader):
+    def iceball_load_file(self, ftype, name):
+        # TODO: full iceball filename check
+        try:
+            if name.startswith(ICEBALL_VIRTUAL_ROOT + "/") and "/." not in name and "\\" not in name:
+                # load file
+                relname = "iceball/" + name[len(ICEBALL_VIRTUAL_ROOT)+1:]
+                fp = open(relname, "rb")
+                udata = fp.read()
+                fp.close()
+
+                # compress data
+                cdata = zlib.compress(udata)
+
+                # send start packet
+                pkt = enet.Packet(struct.pack("<BII", 0x31, len(cdata), len(udata)), enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+
+                # send data packets
+                doffs = 0
+                while doffs < len(cdata):
+                    dlen = min(doffs+1024, len(cdata)) - doffs
+                    pkt = enet.Packet(struct.pack("<BIH", 0x33, doffs, dlen) + cdata[doffs:doffs+dlen], enet.PACKET_FLAG_RELIABLE)
+                    self.peer.send(1, pkt)
+                    doffs += dlen
+
+                # send end packet
+                pkt = enet.Packet("\x32", enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif name == "*MAP":
+                # load map
+                self.send_map(ProgressiveMapGenerator(self.protocol.map))
+        except IOError:
+            pkt = enet.Packet("\x35", enet.PACKET_FLAG_RELIABLE)
+            self.peer.send(1, pkt)
+            
+    def iceball_packet_received(self, data):
+        typ, data = ord(data[0]), data[1:]
+        if typ == 0x30:
+            # file request
+            ftype = ord(data[0]) & 0x0F
+            namelen = ord(data[1])
+            name = data[2:]
+            if "\x00" in name:
+                name = name[:name.find("\x00")]
+            self.iceball_load_file(ftype, name)
+        return
+        
+    def loader_received(self, loader, channel):
         if self.player_id is not None:
+            if self.iceball_mode and channel:
+                return self.iceball_packet_received(loader.data)
             contained = load_client_packet(ByteReader(loader.data))
             if contained.id in (loaders.ExistingPlayer.id, 
                                 loaders.ShortPlayerData.id):
@@ -953,9 +1005,15 @@ class ServerConnection(BaseConnection):
     
     def _connection_ack(self):
         self._send_connection_data()
-        if self.protocol.powerthirst:
-            self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int plrid)", [(ASP_INT, self.player_id)])
-        self.send_map(ProgressiveMapGenerator(self.protocol.map))
+        if self.iceball_mode:
+            # send base directory
+            data = "\x0F" + chr(len(ICEBALL_VIRTUAL_ROOT)) + ICEBALL_VIRTUAL_ROOT + "\x00"
+            pkt = enet.Packet(data, enet.PACKET_FLAG_RELIABLE)
+            self.peer.send(1, pkt)
+        else:
+            if self.protocol.powerthirst:
+                self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int plrid)", [(ASP_INT, self.player_id)])
+            self.send_map(ProgressiveMapGenerator(self.protocol.map))
     
     def _send_connection_data(self):
         saved_loaders = self.saved_loaders = []
@@ -1146,7 +1204,14 @@ class ServerConnection(BaseConnection):
     def send_map(self, data = None):
         if data is not None:
             self.map_data = data
-            if self.protocol.powerthirst:
+            if self.iceball_mode:
+                self.map_doffs = 0
+                ulen = 16*1024*1024 # TODO: calculate the unpacked length PROPERLY
+                clen = data.get_size()
+                d = struct.pack("<BII", 0x31, clen, ulen)
+                pkt = enet.Packet(d, enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif self.protocol.powerthirst:
                 map_start_pt.size = data.get_size()
                 map_start_pt.version = PT_VERSION
                 self.send_contained(map_start_pt)
@@ -1157,17 +1222,27 @@ class ServerConnection(BaseConnection):
             return
             
         if not self.map_data.data_left():
+            if self.iceball_mode:
+                pkt = enet.Packet("\x32", enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
             self.map_data = None
-            for data in self.saved_loaders:
-                packet = enet.Packet(str(data), enet.PACKET_FLAG_RELIABLE)
-                self.peer.send(0, packet)
+            if self.saved_loaders:
+                for data in self.saved_loaders:
+                    packet = enet.Packet(str(data), enet.PACKET_FLAG_RELIABLE)
+                    self.peer.send(0, packet)
             self.saved_loaders = None
             self.on_join()
             return
         for _ in xrange(10):
             if not self.map_data.data_left():
                 break
-            if self.protocol.powerthirst:
+            if self.iceball_mode:
+                dm = self.map_data.read(1024)
+                d = struct.pack("<BIH", 0x33, self.map_doffs, len(dm)) + dm
+                self.map_doffs += len(dm)
+                pkt = enet.Packet(d, enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif self.protocol.powerthirst:
                 map_data_pt.data = self.map_data.read(1024)
                 self.send_contained(map_data_pt)
             else:

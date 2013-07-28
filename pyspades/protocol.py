@@ -82,7 +82,7 @@ class BaseProtocol(object):
             address = enet.Address(interface, port)
         else:
             address = None
-        self.host = enet.Host(address, self.max_connections, 1)
+        self.host = enet.Host(address, self.max_connections, 2)
         self.host.compress_with_range_coder()
         self.update_loop = LoopingCall(self.update)
         self.update_loop.start(update_interval, False)
@@ -112,9 +112,9 @@ class BaseProtocol(object):
         except KeyError:
             return
     
-    def data_received(self, peer, packet):
+    def data_received(self, peer, packet, channel):
         connection = self.connections[peer]
-        connection.loader_received(packet)
+        connection.loader_received(packet, channel)
 
     def remove_peer(self, peer):
         if peer in self.connections:
@@ -155,14 +155,14 @@ class BaseProtocol(object):
                         del self.clients[peer]
                         self.check_client()
                     elif event.type == enet.EVENT_TYPE_RECEIVE:
-                        connection.loader_received(event.packet)
+                        connection.loader_received(event.packet, event.channelID)
                 else:
                     if event_type == enet.EVENT_TYPE_CONNECT:
                         self.on_connect(peer)
                     elif event_type == enet.EVENT_TYPE_DISCONNECT:
                         self.on_disconnect(peer)
                     elif event.type == enet.EVENT_TYPE_RECEIVE:
-                        self.data_received(peer, event.packet)
+                        self.data_received(peer, event.packet, event.channelID)
         except:
             # make sure the LoopingCall doesn't catch this and stops
             import traceback
