@@ -888,11 +888,11 @@ class FeatureProtocol(ServerProtocol):
         if address.host in self.hard_bans:
             return 1
     
-    def data_received(self, peer, packet):
+    def data_received(self, peer, packet, channel):
         ip = peer.address.host
         current_time = reactor.seconds()
         try:
-            ServerProtocol.data_received(self, peer, packet)
+            ServerProtocol.data_received(self, peer, packet, channel)
         except (NoDataLeft, InvalidData):
             import traceback
             traceback.print_exc()
