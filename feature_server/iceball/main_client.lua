@@ -28,6 +28,9 @@ if not nick then error("Set your nickname on the commandline!") end
 BASEDIR = "pkg/aostun"
 TMPDIR = "clsave/vol"
 
+-- TODO: autodetect
+COMPAT075 = false
+
 -- constants
 
 PHY_TICK = 1/62.5
@@ -819,10 +822,16 @@ function handle_network(sec_current, sec_delta)
 		elseif typ == 0x02 then
 			-- world update
 			local i
-			local plen = math.floor(pkt:len()/24+0.001)
+			local entlen = 25
+			if COMPAT075 then entlen = 24 end
+			local plen = math.floor(pkt:len()/entlen+0.001)
 			for i=0,plen-1 do
 				if i ~= players.current then
-					local plr = players[i]
+					local idx = i
+					if not COMPAT075 then
+						idx, pkt = common.net_unpack("B", pkt)
+					end
+					local plr = players[idx]
 					plr.camx, plr.camz, plr.camy, pkt = common.net_unpack("fff", pkt)
 					if plr.ltick then
 						local diff = sec_current - plr.ltick
@@ -844,7 +853,7 @@ function handle_network(sec_current, sec_delta)
 					plr.ltick = sec_current
 					plr.fwx, plr.fwz, plr.fwy, pkt = common.net_unpack("fff", pkt)
 				else
-					pkt = pkt:sub(25)
+					pkt = pkt:sub(entlen+1)
 				end
 			end
 		elseif typ == 0x03 then
