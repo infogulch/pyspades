@@ -546,6 +546,8 @@ class FeatureProtocol(ServerProtocol):
             self.map_rotator_type = itertools.cycle
         self.powerthirst = config.get('powerthirst', False)
         if self.powerthirst:
+            if GAME_VERSION != 3:
+                raise Exception("Powerthirst Edition is only for 0.75. If you want 64-player support, play Iceball, because I'm not updating Powerthirst. --GM")
             self.max_name_length = 31
             self.super_max_players = 64
         self.default_time_limit = config.get('default_time_limit', 20.0)

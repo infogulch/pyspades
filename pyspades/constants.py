@@ -16,7 +16,7 @@
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
 MASTER_VERSION = 31
-GAME_VERSION = 3
+GAME_VERSION = 4
 PT_VERSION = 5
 ICEBALL_ENET_VERSION = 0x42454331
 ICEBALL_VIRTUAL_ROOT = "pkg/aostun"

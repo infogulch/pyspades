@@ -225,6 +225,7 @@ function clipbox(x, z, y)
 	return get_solid(math.floor(x), sy, math.floor(z))
 end
 
+
 print("Load map...")
 map_main = common.map_load("*MAP", "vxl")
 print("READY!")
@@ -237,6 +238,37 @@ camay, camax = 0, 0
 fwx, fwy, fwz = 0, 0, 1
 skx, sky, skz = 0, -1, 0
 camx, camy, camz = 255.5, 32, 255.5
+
+tracers = {}
+
+function new_tracer(x, y, z, vx, vy, vz, model)
+	local this = {
+		x = x, y = y, z = z,
+		vx = vx, vy = vy, vz = vz,
+		model = model,
+		speed = 140.0,
+		expiry = nil,
+		dead = false,
+	}
+
+	function this.tick(sec_current, sec_delta)
+		this.expiry = this.expiry or (sec_current + 1.0)
+		local mvspeed = this.speed * sec_delta
+		this.x = this.x + vx * mvspeed
+		this.y = this.y + vy * mvspeed
+		this.z = this.z + vz * mvspeed
+
+		this.dead = (sec_current >= this.expiry)
+	end
+
+	function this.render()
+		local xa = -math.asin(plr.fwy)
+		local ya = math.atan2(plr.fwx/invy, plr.fwz/invy)
+
+		client.model_render_bone_global(this.model, 0,
+			plr.camx, plr.camy, plr.camz, 0.0, xa, ya, 2.0)
+	end
+end
 
 function new_player(pid)
 	local this = {

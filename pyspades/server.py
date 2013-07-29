@@ -63,7 +63,7 @@ chat_message = loaders.ChatMessage()
 map_data_pt = loaders.MapChunkPT()
 map_data = loaders.MapChunk()
 map_start_pt = loaders.MapStartPT() 
-map_start = loaders.MapStart()
+map_start = (loaders.MapStart075() if GAME_VERSION == 3 else loaders.MapStart())
 state_data = loaders.StateData()
 ctf_data = loaders.CTFState()
 tc_data = loaders.TCState()
@@ -78,7 +78,7 @@ change_team = loaders.ChangeTeam()
 weapon_reload = loaders.WeaponReload()
 territory_capture = loaders.TerritoryCapture()
 progress_bar = loaders.ProgressBar()
-world_update = loaders.WorldUpdate()
+world_update = (loaders.WorldUpdate075() if GAME_VERSION == 3 else loaders.WorldUpdate())
 block_line = loaders.BlockLine()
 weapon_input = loaders.WeaponInput()
 ascript_start = loaders.ScriptStartPT()
@@ -226,6 +226,7 @@ class ServerConnection(BaseConnection):
         self.address = (address.host, address.port)
         self.respawn_time = protocol.respawn_time
         self.rapids = SlidingWindow(RAPID_WINDOW_ENTRIES)
+        self.cached = 0
 
     def on_connect(self):
         if self.local:
@@ -334,6 +335,9 @@ class ServerConnection(BaseConnection):
                         self.world_object.delete()
                         self.world_object = None
                 self.spawn()
+                return
+            if contained.id == loaders.MapCached.id:
+                self.cached = contained.cached
                 return
             if self.hp:
                 world_object = self.world_object
@@ -1217,11 +1221,15 @@ class ServerConnection(BaseConnection):
                 self.send_contained(map_start_pt)
             else:
                 map_start.size = data.get_size()
+                map_start.crc = self.protocol.map_info.data.crc
+                map_start.name = self.protocol.map_info.rot_info.get_map_name()
                 self.send_contained(map_start)
         elif self.map_data is None:
             return
+        if self.cached is None:
+            return
             
-        if not self.map_data.data_left():
+        if self.cached is 1 or not self.map_data.data_left():
             if self.iceball_mode:
                 pkt = enet.Packet("\x32", enet.PACKET_FLAG_RELIABLE)
                 self.peer.send(1, pkt)
@@ -1771,7 +1779,7 @@ class ServerProtocol(BaseProtocol):
             self.update_network()
     
     def update_network(self):
-        items = []
+        items = {}
         for i in xrange(self.super_max_players):
             position = orientation = None
             try:
@@ -1784,11 +1792,15 @@ class ServerProtocol(BaseProtocol):
             except (KeyError, TypeError, AttributeError):
                 pass
             if position is None:
-                position = (0.0, 0.0, 0.0)
-                orientation = (0.0, 0.0, 0.0)
-            items.append((position, orientation))
-        world_update.items = items
-        self.send_contained(world_update, unsequenced = True)
+                continue
+            items[i] = (position, orientation)
+        if GAME_VERSION == 3:
+            world_update.items = [a if i in items else ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+                for a in xrange(self.super_max_players)]
+            self.send_contained(world_update, unsequenced = True)
+        else:
+            world_update.items = items
+            self.send_contained(world_update, unsequenced = True)
     
     def set_map(self, map):
         self.map = map
@@ -1808,6 +1820,7 @@ class ServerProtocol(BaseProtocol):
                     connection.disconnect()
                     continue
                 connection.reset()
+                connection.cached = None
                 connection._send_connection_data()
                 connection.send_map(data.get_child())
         self.update_entities()
