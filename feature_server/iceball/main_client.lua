@@ -29,7 +29,19 @@ BASEDIR = "pkg/aostun"
 TMPDIR = "clsave/vol"
 
 -- TODO: autodetect
+-- true == 0.75, false == 0.76
 COMPAT075 = false
+
+-- settings
+	-- COMPAT_SHOT_ORDER: (TODO)
+	--   Set to true to shoot the first player you see in the player list.
+	--   Set to false to shoot the player nearest to you.
+	COMPAT_SHOT_ORDER = true
+
+	-- COMPAT_SHOTGUN_SPREAD: (TODO)
+	--   Set to true to set pallet spread based on previous pallet.
+	--   Set to false to set pallet spread based on firing vector.
+	COMPAT_SHOTGUN_SPREAD = true
 
 -- constants
 
@@ -57,6 +69,51 @@ FALL_DAMAGE_VELOCITY = 0.58
 FALL_DAMAGE_SCALAR = 4096
 MINERANGE = 3
 WEAPON_PRIMARY = 1
+
+JERK_SPEED = 40
+
+-- weapon data
+weapons = {
+	[0] = {
+		name = "Rifle",
+		delay = 0.6,
+		ammo = 8,
+		stock = 48,
+		reload_time = 2.5,
+		slow_reload = false,
+		m_tracer = "semitracer",
+		spread = 0.004, -- still only a 79% accuracy within a 0.5 block radius at the fogline --GM
+		recoil_y = -0.075,
+		recoil_x = 0.0002,
+		shot_count = 1,
+	},
+	[1] = {
+		name = "SMG",
+		delay = 0.1, -- we are going to be doing AoS-style scheduling.
+		ammo = 30,
+		stock = 150,
+		reload_time = 2.5,
+		slow_reload = false,
+		m_tracer = "smgtracer",
+		spread = 0.012,
+		recoil_y = -0.0125,
+		recoil_x = 0.00005,
+		shot_count = 1,
+	},
+	[2] = {
+		name = "Shotgun",
+		delay = 0.8,
+		ammo = 8,
+		stock = 48,
+		reload_time = 0.4,
+		slow_reload = true,
+		m_tracer = "shotguntracer",
+		spread = 0.036, -- unless he made the spread pattern not suck in 0.76, this is actually really, really bad.
+		recoil_y = -0.075,
+		recoil_x = 0.0002,
+		shot_count = 8,
+	},
+}
 
 -- includes
 dofile(BASEDIR.."/lib_sdlkey.lua")
@@ -265,11 +322,36 @@ function new_tracer(x, y, z, vx, vy, vz, model)
 	end
 
 	function this.render()
-		local xa = -math.asin(plr.fwy)
-		local ya = math.atan2(plr.fwx/invy, plr.fwz/invy)
+		local invy = math.sqrt(1 - this.vy)
+		local xa = -math.asin(this.vy)
+		local ya = math.atan2(this.vx/invy, this.vz/invy)
 
 		client.model_render_bone_global(this.model, 0,
-			plr.camx, plr.camy, plr.camz, 0.0, xa, ya, 2.0)
+			this.x, this.y, this.z, 0.0, xa, ya, 2.0)
+	end
+
+	tracers[#tracers+1] = this
+
+	return this
+end
+
+function tracers_tick(sec_current, sec_delta)
+	local i = 1
+	while i <= #tracers do
+		if tracers[i].dead then
+			tracers[i] = tracers[#tracers]
+			tracers[#tracers] = nil
+		else
+			tracers[i].tick(sec_current, sec_delta)
+			i = i + 1
+		end
+	end
+end
+
+function tracers_render()
+	local i
+	for i=1,#tracers do
+		tracers[i].render()
 	end
 end
 
@@ -279,6 +361,7 @@ function new_player(pid)
 		alive = false, spawned = false,
 		fwx = 0, fwy = 0, fwz = 1,
 		camx = 0, camy = 0, camz = 0,
+		jerkoffs = 0,
 		lcamx = 0, lcamy = 0, lcamz = 0,
 		ltick = nil,
 		tool = 2, gun = 0,
@@ -298,6 +381,23 @@ function new_player(pid)
 		last_time_phy = nil,
 		lfwx = nil, lfwy = nil, lfwz = nil,
 	}
+
+	function this.set_crouch(new_crouch)
+		if new_crouch and not this.crouching then
+			if not this.airborne then
+				this.camy = this.camy + 0.9
+				this.jerkoffs = this.jerkoffs - 0.9
+			end
+			this.crouching = new_crouch
+		elseif this.crouching and not new_crouch then
+			-- TODO: ceiling check
+			if not this.airborne then
+				this.camy = this.camy - 0.9
+				this.jerkoffs = this.jerkoffs + 0.9
+			end
+			this.crouching = new_crouch
+		end
+	end
 
 	function this.updateflags(sec_current)
 		local b = 0
@@ -330,20 +430,22 @@ function new_player(pid)
 				this.last_time_phy = sec_current
 			end
 			if this.fwx and (this.lfwx ~= this.fwx or this.lfwy ~= this.fwy or this.lfwz ~= this.fwz) then
-				common.net_send(nil, common.net_pack("Bfff", 0x01, this.fwx, this.fwz, this.fwy))
+				if this.team >= 0 then
+					common.net_send(nil, common.net_pack("Bfff", 0x01, this.fwx, this.fwz, this.fwy))
+				end
 				this.lfwx = this.fwx
 				this.lfwy = this.fwy
 				this.lfwz = this.fwz
 			end
-			if this.camx then
+			if this.camx and this.team >= 0 then
 				common.net_send(nil, common.net_pack("Bfff", 0x00, this.camx, this.camz, this.camy))
 			end
 		end
 
-		if queue_flags then
+		if queue_flags and this.team >= 0 then
 			common.net_send(nil, common.net_pack("BBB", 0x03, this.pid, b))
 		end
-		if queue_wflags then
+		if queue_wflags and this.team >= 0 then
 			common.net_send(nil, common.net_pack("BBB", 0x04, this.pid, wb))
 		end
 	end
@@ -351,12 +453,15 @@ function new_player(pid)
 	function this.setflags(b)
 		this.sprinting = (b >= 128); b = b % 128
 		this.sneaking = (b >= 64); b = b % 64
-		this.crouching = (b >= 32); b = b % 32
+		local new_crouch = (b >= 32); b = b % 32
 		this.jumping = (b >= 16); b = b % 16
 		this.mvr = (b >= 8); b = b % 8
 		this.mvl = (b >= 4); b = b % 4
 		this.mvd = (b >= 2); b = b % 2
 		this.mvu = (b >= 1); b = b % 1
+
+		this.set_crouch(new_crouch)
+		this.crouching = new_crouch
 	end
 
 	function this.setwpnflags(b)
@@ -433,6 +538,7 @@ function new_player(pid)
 		if(climb) then
 			this.vx = this.vx * 0.5
 			this.vz = this.vz * 0.5
+			this.jerkoffs = this.jerkoffs + 1
 			this.lastclimb = ftotclk
 			ny = ny - 1
 			m = -1.35
@@ -561,6 +667,61 @@ function new_player(pid)
 		return(0) --no fall damage
 	end
 
+	function this.fire_shot(sec_current, sec_delta)
+		-- get forward vector
+		local fwx, fwy, fwz
+
+		fwx = this.fwx
+		fwy = this.fwy
+		fwz = this.fwz
+
+		-- apply spread
+		local spread = weapons[this.gun].spread
+		local sx = (2*math.random()-1)*spread
+		local sy = (2*math.random()-1)*spread
+		local sz = (2*math.random()-1)*spread
+
+		fwx = fwx + sx
+		fwy = fwy + sy
+		fwz = fwz + sz
+
+		-- normalise
+		local fwd = 1.0 / math.sqrt(fwx*fwx + fwy*fwy + fwz*fwz)
+		fwx = fwx * fwd
+		fwy = fwy * fwd
+		fwz = fwz * fwd
+
+		-- trace against players
+		-- TODO!
+
+		-- apply recoil
+		-- TODO!
+
+		-- add tracer
+		new_tracer(this.camx, this.camy, this.camz, fwx, fwy, fwz, MODELS[weapons[this.gun].m_tracer])
+
+		-- play sound
+		-- TODO!
+	end
+
+	function this.update_gun(sec_current, sec_delta)
+		if this.t_nexttrig and sec_current >= this.t_nexttrig then
+			this.t_nexttrig = nil
+		end
+		if this.lmb then
+			if this.t_nextshot and sec_current >= this.t_nextshot then
+				this.t_nextshot = nil
+			end
+			if not this.t_nextshot then
+				this.fire_shot(sec_current, sec_delta)
+				this.t_nextshot = sec_current + weapons[this.gun].delay
+				this.t_nexttrig = sec_current + weapons[this.gun].delay
+			end
+		else
+			this.t_nextshot = nil
+		end
+	end
+
 	function this.tick(sec_current, sec_delta)
 		if not this.spawned then return end
 		if this.team < -1 then return end
@@ -628,11 +789,12 @@ function new_player(pid)
 				this.camz = this.camz - upz * mvspeed
 			end
 		elseif this.team >= 0 then
+			this.jerkoffs = math.exp(-sec_delta*JERK_SPEED) * this.jerkoffs
+			if math.abs(this.jerkoffs) > 5 then
+				this.jerkoffs = 0
+			end
+			this.update_gun(sec_current, sec_delta)
 			local fdmg = this.move_player(sec_current, sec_delta)
-			local mvspeed = 0.2
-			this.camx = this.camx + this.vx * mvspeed
-			this.camy = this.camy + this.vy * mvspeed
-			this.camz = this.camz + this.vz * mvspeed
 			--print(this.vx, this.vy, this.vz)
 		end
 	end
@@ -809,15 +971,21 @@ function handle_network(sec_current, sec_delta)
 			-- position data
 			local pid, camx, camy, camz
 			camx, camz, camy, pkt = common.net_unpack("fff", pkt)
+			local dx,dy,dz
 			local plr = players[players.current]
-			if true then
-				plr.camx = camx
-				plr.camy = camy
-				plr.camz = camz
-				plr.lcamx = camx
-				plr.lcamy = camy
-				plr.lcamz = camz
-				plr.ltick = sec_current
+			if plr then
+				dx = (camx - plr.camx)
+				dy = (camy - plr.camy)
+				dz = (camz - plr.camz)
+				if dx*dx + dz*dz > 2*2 or dy*dy > 2*2 then
+					plr.camx = camx
+					plr.camy = camy
+					plr.camz = camz
+					plr.lcamx = camx
+					plr.lcamy = camy
+					plr.lcamz = camz
+					plr.ltick = sec_current
+				end
 			end
 		elseif typ == 0x02 then
 			-- world update
@@ -832,24 +1000,34 @@ function handle_network(sec_current, sec_delta)
 						idx, pkt = common.net_unpack("B", pkt)
 					end
 					local plr = players[idx]
-					plr.camx, plr.camz, plr.camy, pkt = common.net_unpack("fff", pkt)
-					if plr.ltick then
-						local diff = sec_current - plr.ltick
-						if diff > 0.04 then
-							local vx, vy, vz
-							vx = (plr.camx - plr.lcamx) / diff * PHY_TICK
-							vy = (plr.camy - plr.lcamy) / diff * PHY_TICK
-							vz = (plr.camz - plr.lcamz) / diff * PHY_TICK
-							if vx*vx + vy*vy + vz*vz < 20.0^2 then
-								plr.vx = vx
-								plr.vy = vy
-								plr.vz = vz
+					local nx,ny,nz
+					local dx,dy,dz
+					nx, nz, ny, pkt = common.net_unpack("fff", pkt)
+					dx = (nx - plr.camx)
+					dy = (ny - plr.camy)
+					dz = (nz - plr.camz)
+					if dx*dx + dz*dz > 2*2 or dy*dy > 2*2 then
+						plr.camx = nx
+						plr.camy = ny
+						plr.camz = nz
+						if plr.ltick then
+							local diff = sec_current - plr.ltick
+							if diff > 0.04 then
+								local vx, vy, vz
+								vx = (plr.camx - plr.lcamx) / diff * PHY_TICK
+								vy = (plr.camy - plr.lcamy) / diff * PHY_TICK
+								vz = (plr.camz - plr.lcamz) / diff * PHY_TICK
+								if vx*vx + vy*vy + vz*vz < 20.0^2 then
+									plr.vx = vx
+									plr.vy = vy
+									plr.vz = vz
+								end
 							end
 						end
 					end
-					plr.lcamx = plr.camx
-					plr.lcamy = plr.camy
-					plr.lcamz = plr.camz
+					plr.lcamx = nx
+					plr.lcamy = ny
+					plr.lcamz = nz
 					plr.ltick = sec_current
 					plr.fwx, plr.fwz, plr.fwy, pkt = common.net_unpack("fff", pkt)
 				else
@@ -1077,6 +1255,9 @@ function client.hook_tick(sec_current, sec_delta)
 			players.current, cteam, 0, 2, 0x1CEBA11, 255, 0, 255, nick))
 	end
 
+	-- update tracers
+	tracers_tick(sec_current, sec_delta)
+
 	-- get player
 	plr = players[players.current]
 	camx, camy, camz = plr.camx, plr.camy, plr.camz
@@ -1086,7 +1267,7 @@ function client.hook_tick(sec_current, sec_delta)
 	plr.mvd = ktab[SDLK_s]
 	plr.mvl = ktab[SDLK_a]
 	plr.mvr = ktab[SDLK_d]
-	plr.crouching = ktab[SDLK_LCTRL]
+	plr.set_crouch(ktab[SDLK_LCTRL])
 	plr.jumping = (plr.team == -1 or not plr.airborne) and ktab[SDLK_SPACE]
 	plr.sprinting = ktab[SDLK_LSHIFT]
 	plr.sneaking = ktab[SDLK_v]
@@ -1116,10 +1297,10 @@ function client.hook_tick(sec_current, sec_delta)
 	local splr = spec_player and players[spec_player]
 	if splr and splr.camx then
 		client.camera_point_sky(splr.fwx, splr.fwy, splr.fwz, 1.0, skx, sky, skz)
-		client.camera_move_to(splr.camx, splr.camy, splr.camz)
+		client.camera_move_to(splr.camx, splr.camy + splr.jerkoffs, splr.camz)
 	else
 		client.camera_point_sky(fwx, fwy, fwz, 1.0, skx, sky, skz)
-		client.camera_move_to(camx, camy, camz)
+		client.camera_move_to(camx, camy + plr.jerkoffs, camz)
 	end
 
 	return 0.005
@@ -1141,26 +1322,29 @@ function client.hook_render()
 		local ya = math.atan2(plr.fwx/invy, plr.fwz/invy)
 		if plr.team >= 0 and plr.team <= 1 and plr.spawned then
 			local team = teams[plr.team]
+			local camy = plr.camy + plr.jerkoffs
 			if plr.alive then
 				if i ~= players.current and i ~= spec_player then
-					--print(plr.camx, plr.camy, plr.camz)
+					--print(plr.camx, camy, plr.camz)
 					client.model_render_bone_global(team.models.playerhead, 0,
-						plr.camx, plr.camy, plr.camz, 0.0, xa, ya, 2.0)
+						plr.camx, camy, plr.camz, 0.0, xa, ya, 2.0)
 					if plr.crouching then
 						client.model_render_bone_global(team.models.playertorsoc, 0,
-							plr.camx, plr.camy, plr.camz, 0.0, 0.0, ya, 2.0)
+							plr.camx, camy, plr.camz, 0.0, 0.0, ya, 2.0)
 						client.model_render_bone_global(team.models.playerlegc, 0,
-							plr.camx-plr.fwz*0.2/invy-plr.fwx*0.5/invy, plr.camy+0.5, plr.camz+plr.fwx*0.2/invy-plr.fwz*0.5/invy, 0.0, 0.0, ya, 2.0)
+							plr.camx-plr.fwz*0.2/invy-plr.fwx*0.5/invy, camy+0.5, plr.camz+plr.fwx*0.2/invy-plr.fwz*0.5/invy, 0.0, 0.0, ya, 2.0)
 						client.model_render_bone_global(team.models.playerlegc, 0,
-							plr.camx+plr.fwz*0.2/invy-plr.fwx*0.5/invy, plr.camy+0.5, plr.camz-plr.fwx*0.2/invy-plr.fwz*0.5/invy, 0.0, 0.0, ya, 2.0)
+							plr.camx+plr.fwz*0.2/invy-plr.fwx*0.5/invy, camy+0.5, plr.camz-plr.fwx*0.2/invy-plr.fwz*0.5/invy, 0.0, 0.0, ya, 2.0)
 					else
 						client.model_render_bone_global(team.models.playertorso, 0,
-							plr.camx, plr.camy, plr.camz, 0.0, 0.0, ya, 2.0)
+							plr.camx, camy, plr.camz, 0.0, 0.0, ya, 2.0)
 						client.model_render_bone_global(team.models.playerleg, 0,
-							plr.camx-plr.fwz*0.2/invy, plr.camy+1.0, plr.camz+plr.fwx*0.2/invy, 0.0, 0.0, ya, 2.0)
+							plr.camx-plr.fwz*0.2/invy, camy+1.0, plr.camz+plr.fwx*0.2/invy, 0.0, 0.0, ya, 2.0)
 						client.model_render_bone_global(team.models.playerleg, 0,
-							plr.camx+plr.fwz*0.2/invy, plr.camy+1.0, plr.camz-plr.fwx*0.2/invy, 0.0, 0.0, ya, 2.0)
+							plr.camx+plr.fwz*0.2/invy, camy+1.0, plr.camz-plr.fwx*0.2/invy, 0.0, 0.0, ya, 2.0)
 					end
+					client.model_render_bone_global(team.models.playerarms, 0,
+						plr.camx, camy+0.5, plr.camz, 0.0, xa, ya, 2.0)
 				end
 
 				local mdl = nil
@@ -1177,16 +1361,17 @@ function client.hook_render()
 
 				if mdl then
 					client.model_render_bone_global(mdl, 0,
-						plr.camx+plr.fwx*1.0-plr.fwz*0.5/invy, plr.camy+plr.fwy*1.0+0.5, plr.camz+plr.fwz*1.0+plr.fwx*0.5/invy, 0.0, xa, ya, 1.0)
+						plr.camx+plr.fwx*1.0-plr.fwz*0.5/invy, camy+plr.fwy*1.0+0.5, plr.camz+plr.fwz*1.0+plr.fwx*0.5/invy, 0.0, xa, ya, 1.0)
 				end
-				client.model_render_bone_global(team.models.playerarms, 0,
-					plr.camx, plr.camy+0.5, plr.camz, 0.0, xa, ya, 2.0)
 			else
 				client.model_render_bone_global(team.models.playerdead, 0,
-					plr.camx, plr.camy+2.0, plr.camz, 0.0, 0.0, ya, 2.0)
+					plr.camx, camy+2.0, plr.camz, 0.0, 0.0, ya, 2.0)
 			end
 		end
 	end
+
+	-- show tracers
+	tracers_render()
 
 	local w,h
 	w,h = client.screen_get_dims()
@@ -1217,9 +1402,10 @@ function client.hook_render()
 
 	-- names
 	local i
+	local cplr = players[players.current]
 	for i=0,63 do
 		local plr = players[i]
-		if i ~= players.current and plr.spawned and plr.camx then
+		if i ~= players.current and plr.spawned and plr.camx and (cplr.team == -1 or cplr.team == plr.team) and plr.team >= 0 then
 			local name = "["..plr.name.." #"..i.."]"
 
 			local x,y,z
