@@ -15,6 +15,11 @@
 # You should have received a copy of the GNU General Public License
 # along with pyspades.  If not, see <http://www.gnu.org/licenses/>.
 
+SUPER_MAX_PLAYERS = 32
+SUPER_MAX_PLAYERS_PT = 64
+MAX_NAME_LENGTH = 15
+MAX_NAME_LENGTH_PT = 31
+
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 from pyspades.protocol import BaseConnection, BaseProtocol
@@ -30,6 +35,8 @@ from pyspades import world
 from pyspades.debug import *
 from pyspades.weapon import WEAPONS
 import enet
+import cStringIO as stringio
+import struct
 
 import random
 import math
@@ -53,8 +60,10 @@ player_left = loaders.PlayerLeft()
 block_action = loaders.BlockAction()
 kill_action = loaders.KillAction()
 chat_message = loaders.ChatMessage()
+map_data_pt = loaders.MapChunkPT()
 map_data = loaders.MapChunk()
-map_start = loaders.MapStart()
+map_start_pt = loaders.MapStartPT() 
+map_start = (loaders.MapStart075() if GAME_VERSION == 3 else loaders.MapStart())
 state_data = loaders.StateData()
 ctf_data = loaders.CTFState()
 tc_data = loaders.TCState()
@@ -69,9 +78,13 @@ change_team = loaders.ChangeTeam()
 weapon_reload = loaders.WeaponReload()
 territory_capture = loaders.TerritoryCapture()
 progress_bar = loaders.ProgressBar()
-world_update = loaders.WorldUpdate()
+world_update = (loaders.WorldUpdate075() if GAME_VERSION == 3 else loaders.WorldUpdate())
 block_line = loaders.BlockLine()
 weapon_input = loaders.WeaponInput()
+ascript_start = loaders.ScriptStartPT()
+ascript_chunk = loaders.ScriptChunkPT()
+ascript_end = loaders.ScriptEndPT()
+ascript_call = loaders.ScriptCallPT()
 
 def check_nan(*values):
     for value in values:
@@ -200,7 +213,10 @@ class ServerConnection(BaseConnection):
     world_object = None
     last_block = None
     map_data = None
+    ascript_data = None
     last_position_update = None
+    iceball_mode = False
+    local = False
     
     def __init__(self, *arg, **kw):
         BaseConnection.__init__(self, *arg, **kw)
@@ -210,12 +226,17 @@ class ServerConnection(BaseConnection):
         self.address = (address.host, address.port)
         self.respawn_time = protocol.respawn_time
         self.rapids = SlidingWindow(RAPID_WINDOW_ENTRIES)
-    
+        self.cached = 0
+
     def on_connect(self):
-        if self.peer.eventData != self.protocol.version:
+        if self.local:
+            return
+        if self.peer.eventData == ICEBALL_ENET_VERSION:
+            self.iceball_mode = True
+        elif self.peer.eventData != self.protocol.version:
             self.disconnect(ERROR_WRONG_VERSION)
             return
-        max_players = min(32, self.protocol.max_players)
+        max_players = min(self.protocol.super_max_players, self.protocol.max_players)
         if len(self.protocol.connections) > max_players:
             self.disconnect(ERROR_FULL)
             return
@@ -229,8 +250,57 @@ class ServerConnection(BaseConnection):
         if not self.disconnected:
             self._connection_ack()
     
-    def loader_received(self, loader):
+    def iceball_load_file(self, ftype, name):
+        # TODO: full iceball filename check
+        try:
+            if name.startswith(ICEBALL_VIRTUAL_ROOT + "/") and "/." not in name and "\\" not in name:
+                # load file
+                relname = "iceball/" + name[len(ICEBALL_VIRTUAL_ROOT)+1:]
+                fp = open(relname, "rb")
+                udata = fp.read()
+                fp.close()
+
+                # compress data
+                cdata = zlib.compress(udata)
+
+                # send start packet
+                pkt = enet.Packet(struct.pack("<BII", 0x31, len(cdata), len(udata)), enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+
+                # send data packets
+                doffs = 0
+                while doffs < len(cdata):
+                    dlen = min(doffs+1024, len(cdata)) - doffs
+                    pkt = enet.Packet(struct.pack("<BIH", 0x33, doffs, dlen) + cdata[doffs:doffs+dlen], enet.PACKET_FLAG_RELIABLE)
+                    self.peer.send(1, pkt)
+                    doffs += dlen
+
+                # send end packet
+                pkt = enet.Packet("\x32", enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif name == "*MAP":
+                # load map
+                self.send_map(ProgressiveMapGenerator(self.protocol.map))
+        except IOError:
+            pkt = enet.Packet("\x35", enet.PACKET_FLAG_RELIABLE)
+            self.peer.send(1, pkt)
+            
+    def iceball_packet_received(self, data):
+        typ, data = ord(data[0]), data[1:]
+        if typ == 0x30:
+            # file request
+            ftype = ord(data[0]) & 0x0F
+            namelen = ord(data[1])
+            name = data[2:]
+            if "\x00" in name:
+                name = name[:name.find("\x00")]
+            self.iceball_load_file(ftype, name)
+        return
+        
+    def loader_received(self, loader, channel):
         if self.player_id is not None:
+            if self.iceball_mode and channel:
+                return self.iceball_packet_received(loader.data)
             contained = load_client_packet(ByteReader(loader.data))
             if contained.id in (loaders.ExistingPlayer.id, 
                                 loaders.ShortPlayerData.id):
@@ -246,11 +316,13 @@ class ServerConnection(BaseConnection):
                 self.team = team
                 if self.name is None:
                     name = contained.name
-                     # vanilla AoS behaviour
+                    # vanilla AoS behaviour
                     if name == 'Deuce':
                         name = name + str(self.player_id)
                     self.name = self.protocol.get_name(name)
                     self.protocol.players[self.name, self.player_id] = self
+                    if self.name != contained.name:
+                        self.call_ascript("void set_name(int, string &in)", [(ASP_INT, self.player_id), (ASP_PSTRING, self.name)])
                     self.on_login(self.name)
                 else:
                     self.on_team_changed(old_team)
@@ -263,6 +335,9 @@ class ServerConnection(BaseConnection):
                         self.world_object.delete()
                         self.world_object = None
                 self.spawn()
+                return
+            if contained.id == loaders.MapCached.id:
+                self.cached = contained.cached
                 return
             if self.hp:
                 world_object = self.world_object
@@ -277,6 +352,10 @@ class ServerConnection(BaseConnection):
                         return
                     if returned is not None:
                         x, y, z = returned
+                    if abs(x**2 + y**2 + z**2 - 1.0) > 0.005 and self.team != self.protocol.spectator_team and (self.user_types is None or 'admin' not in self.user_types):
+                        self.on_hack_attempt(
+                            'Ghetto hack detected %s' % self.user_types)
+                        return
                     world_object.set_orientation(x, y, z)
                 elif contained.id == loaders.PositionData.id:
                     current_time = reactor.seconds()
@@ -751,6 +830,7 @@ class ServerConnection(BaseConnection):
         else:
             self.protocol.send_contained(create_player, save = True)
         if not spectator:
+            self.call_ascript("void on_spawn()", [])
             self.on_spawn((x, y, z))
 
     def take_flag(self):
@@ -877,6 +957,11 @@ class ServerConnection(BaseConnection):
         self.send_contained(set_hp)
     
     def set_weapon(self, weapon, local = False, no_kill = False):
+        weapon = max(0,min(2,weapon))
+        if self.protocol.powerthirst:
+            weapon += 3
+            if weapon == 5:
+                weapon = 2 # this is still being worked on.
         self.weapon = weapon
         if self.weapon_object is not None:
             self.weapon_object.reset()
@@ -924,7 +1009,15 @@ class ServerConnection(BaseConnection):
     
     def _connection_ack(self):
         self._send_connection_data()
-        self.send_map(ProgressiveMapGenerator(self.protocol.map))
+        if self.iceball_mode:
+            # send base directory
+            data = "\x0F" + chr(len(ICEBALL_VIRTUAL_ROOT)) + ICEBALL_VIRTUAL_ROOT + "\x00"
+            pkt = enet.Packet(data, enet.PACKET_FLAG_RELIABLE)
+            self.peer.send(1, pkt)
+        else:
+            if self.protocol.powerthirst:
+                self.send_ascript(stringio.StringIO(self.protocol.ascript_main), "main", "void main(int plrid)", [(ASP_INT, self.player_id)])
+            self.send_map(ProgressiveMapGenerator(self.protocol.map))
     
     def _send_connection_data(self):
         saved_loaders = self.saved_loaders = []
@@ -1063,36 +1156,117 @@ class ServerConnection(BaseConnection):
         weapon_reload.clip_ammo = self.weapon_object.current_ammo
         weapon_reload.reserve_ammo = self.weapon_object.current_stock
         self.send_contained(weapon_reload)
+
+    def call_ascript(self, fn, adata):
+        if self.protocol.powerthirst:
+            data = ""
+            for (t, d) in adata:
+                data += chr(t)
+                if t == ASP_INT:
+                    data += struct.pack("<I", d&0xFFFFFFFF)
+                elif t == ASP_FLOAT:
+                    data += struct.pack("<f", d)
+                elif t == ASP_PSTRING:
+                    d = d[:255]
+                    data += chr(len(d)) + d
+                else:
+                    raise Exception("Unsupported argument type %s" % repr(t))
+
+            data += "\x00"
+            ascript_call.name = fn
+            ascript_call.data = data
+            self.send_contained(ascript_call)
     
+    def send_ascript(self, data = None, name = None, call = None, args = None):
+        #return # disabled for now
+        if data is not None:
+            self.ascript_data = data
+            self.ascript_name = name
+	    self.ascript_call = call
+	    self.ascript_args = args
+            ascript_start.size = len(data.read())
+	    ascript_start.name = name
+	    data.seek(0)
+            self.send_contained(ascript_start)
+        elif self.ascript_data is None:
+            return
+            
+        if self.ascript_data == True:
+            self.ascript_data = None
+	    ascript_end.name = self.ascript_name
+	    self.send_contained(ascript_end)
+            self.call_ascript(self.ascript_call, self.ascript_args)
+            return
+        for _ in xrange(10):
+            s = self.ascript_data.read(1024)
+            if s == "":
+                self.ascript_data = True
+                break
+            ascript_chunk.data = s
+            self.send_contained(ascript_chunk)
+
     def send_map(self, data = None):
         if data is not None:
             self.map_data = data
-            map_start.size = data.get_size()
-            self.send_contained(map_start)
+            if self.iceball_mode:
+                self.map_doffs = 0
+                ulen = 16*1024*1024 # TODO: calculate the unpacked length PROPERLY
+                clen = data.get_size()
+                d = struct.pack("<BII", 0x31, clen, ulen)
+                pkt = enet.Packet(d, enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif self.protocol.powerthirst:
+                map_start_pt.size = data.get_size()
+                map_start_pt.version = PT_VERSION
+                self.send_contained(map_start_pt)
+            else:
+                map_start.size = data.get_size()
+                map_start.crc = self.protocol.map_info.data.crc
+                map_start.name = self.protocol.map_info.rot_info.get_map_name()
+                self.send_contained(map_start)
         elif self.map_data is None:
             return
+        if self.cached is None:
+            return
             
-        if not self.map_data.data_left():
+        if self.cached is 1 or not self.map_data.data_left():
+            if self.iceball_mode:
+                pkt = enet.Packet("\x32", enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
             self.map_data = None
-            for data in self.saved_loaders:
-                packet = enet.Packet(str(data), enet.PACKET_FLAG_RELIABLE)
-                self.peer.send(0, packet)
+            if self.saved_loaders:
+                for data in self.saved_loaders:
+                    packet = enet.Packet(str(data), enet.PACKET_FLAG_RELIABLE)
+                    self.peer.send(0, packet)
             self.saved_loaders = None
             self.on_join()
             return
         for _ in xrange(10):
             if not self.map_data.data_left():
                 break
-            map_data.data = self.map_data.read(1024)
-            self.send_contained(map_data)
+            if self.iceball_mode:
+                dm = self.map_data.read(1024)
+                d = struct.pack("<BIH", 0x33, self.map_doffs, len(dm)) + dm
+                self.map_doffs += len(dm)
+                pkt = enet.Packet(d, enet.PACKET_FLAG_RELIABLE)
+                self.peer.send(1, pkt)
+            elif self.protocol.powerthirst:
+                map_data_pt.data = self.map_data.read(1024)
+                self.send_contained(map_data_pt)
+            else:
+                map_data.data = self.map_data.read(1024)
+                self.send_contained(map_data)
     
     def continue_map_transfer(self):
         self.send_map()
     
+    def continue_ascript_transfer(self):
+        self.send_ascript()
+    
     def send_data(self, data):
         self.protocol.transport.write(data, self.address)
     
-    def send_chat(self, value, global_message = None):
+    def send_chat(self, value, global_message = None, color = 0):
         if self.deaf:
             return
         if global_message is None:
@@ -1101,7 +1275,9 @@ class ServerConnection(BaseConnection):
         else:
             chat_message.chat_type = CHAT_TEAM
             # 34 is guaranteed to be out of range!
-            chat_message.player_id = 35
+            # Yeah, Right (even a value of 67 works fine in an unmodded client) --GM
+            # the color= value is for the Powerthirst Edition only, it will be blue on vanilla --GM
+            chat_message.player_id = self.protocol.super_max_players+3+(color%8)
             prefix = self.protocol.server_prefix + ' '
         lines = textwrap.wrap(value, MAX_CHAT_SIZE - len(prefix) - 1)
         for line in lines:
@@ -1448,12 +1624,16 @@ class ServerProtocol(BaseProtocol):
 
     name = 'pyspades server'
     game_mode = CTF_MODE
-    max_players = 32
+    powerthirst = False
+    max_players = SUPER_MAX_PLAYERS
+    super_max_players = SUPER_MAX_PLAYERS
+    max_name_length = MAX_NAME_LENGTH
     connections = None
     player_ids = None
     master = False
     max_score = 10
     map = None
+    ascript_main = None
     spade_teamkills_on_grief = False
     friendly_fire = False
     friendly_fire_time = 2
@@ -1501,6 +1681,9 @@ class ServerProtocol(BaseProtocol):
         self.green_team.other = self.blue_team
         self.world = world.World()
         self.set_master()
+        # TODO: move this elsewhere
+        if self.powerthirst:
+            self.ascript_main = zlib.compress(open("ptscripts/main.as","rb").read(), COMPRESSION_LEVEL)
         
         # safe position LUT
         self.pos_table = []
@@ -1534,6 +1717,14 @@ class ServerProtocol(BaseProtocol):
                     player.saved_loaders.append(data)
             else:
                 player.peer.send(0, packet)
+    def call_ascript(self, *args, **kwargs):
+        for i in xrange(self.super_max_players):
+            position = orientation = None
+            try:
+                player = self.players[i]
+                player.call_ascript(*args, **kwargs)
+            except (KeyError, TypeError, AttributeError):
+                pass
     
     def reset_tc(self):
         self.entities = self.get_cp_entities()
@@ -1576,7 +1767,10 @@ class ServerProtocol(BaseProtocol):
         self.loop_count += 1
         BaseProtocol.update(self)
         for player in self.connections.values():
-            if (player.map_data is not None and 
+            if (player.ascript_data is not None and 
+            not player.peer.reliableDataInTransit):
+                player.continue_ascript_transfer()
+            elif (player.map_data is not None and 
             not player.peer.reliableDataInTransit):
                 player.continue_map_transfer()
         self.world.update(UPDATE_FREQUENCY)
@@ -1585,8 +1779,8 @@ class ServerProtocol(BaseProtocol):
             self.update_network()
     
     def update_network(self):
-        items = []
-        for i in xrange(32):
+        items = {}
+        for i in xrange(self.super_max_players):
             position = orientation = None
             try:
                 player = self.players[i]
@@ -1598,11 +1792,15 @@ class ServerProtocol(BaseProtocol):
             except (KeyError, TypeError, AttributeError):
                 pass
             if position is None:
-                position = (0.0, 0.0, 0.0)
-                orientation = (0.0, 0.0, 0.0)
-            items.append((position, orientation))
-        world_update.items = items
-        self.send_contained(world_update, unsequenced = True)
+                continue
+            items[i] = (position, orientation)
+        if GAME_VERSION == 3:
+            world_update.items = [a if i in items else ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+                for a in xrange(self.super_max_players)]
+            self.send_contained(world_update, unsequenced = True)
+        else:
+            world_update.items = items
+            self.send_contained(world_update, unsequenced = True)
     
     def set_map(self, map):
         self.map = map
@@ -1622,6 +1820,7 @@ class ServerProtocol(BaseProtocol):
                     connection.disconnect()
                     continue
                 connection.reset()
+                connection.cached = None
                 connection._send_connection_data()
                 connection.send_map(data.get_child())
         self.update_entities()
@@ -1653,12 +1852,12 @@ class ServerProtocol(BaseProtocol):
     
     def get_name(self, name):
         name = name.replace('%', '').encode('ascii', 'ignore')
-        new_name = name
+        new_name = name[:self.max_name_length]
         names = [p.name.lower() for p in self.players.values()]
         i = 0
         while new_name.lower() in names:
             i += 1
-            new_name = name + str(i)
+            new_name = name[:self.max_name_length-len(str(i))] + str(i)
         return new_name
     
     def get_mode_mode(self):
@@ -1718,7 +1917,7 @@ class ServerProtocol(BaseProtocol):
                 entity.update()
     
     def send_chat(self, value, global_message = None, sender = None,
-                  team = None):
+                  team = None, color = 0):
         for player in self.players.values():
             if player is sender:
                 continue
@@ -1726,7 +1925,7 @@ class ServerProtocol(BaseProtocol):
                 continue
             if team is not None and player.team is not team:
                 continue
-            player.send_chat(value, global_message)
+            player.send_chat(value, global_message, color = color)
     
     def set_fog_color(self, color):
         self.fog_color = color
@@ -1758,3 +1957,4 @@ class ServerProtocol(BaseProtocol):
 
     def on_update_entity(self, entity):
         pass
+

@@ -174,7 +174,8 @@ class FeatureConnection(ServerConnection):
         self.printable_name = name.encode('ascii', 'replace')
         print '%s (IP %s, ID %s) entered the game!' % (self.printable_name, 
             self.address[0], self.player_id)
-        self.protocol.irc_say('* %s entered the game' % self.name)
+        self.protocol.irc_say('* %s (IP %s, ID %s) entered the game!' % 
+            (self.name, self.address[0], self.player_id))
         if self.user_types is None:
             self.user_types = AttributeSet()
             self.rights = AttributeSet()
@@ -192,7 +193,8 @@ class FeatureConnection(ServerConnection):
     def on_disconnect(self):
         if self.name is not None:
             print self.printable_name, 'disconnected!'
-            self.protocol.irc_say('* %s disconnected' % self.name)
+            self.protocol.irc_say('* %s (IP %s) disconnected' % 
+                (self.name, self.address[0]))
             self.protocol.player_memory.append((self.name, self.address[0]))
         else:
             print '%s disconnected' % self.address[0]
@@ -542,6 +544,12 @@ class FeatureProtocol(ServerProtocol):
             self.map_rotator_type = random_choice_cycle
         else:
             self.map_rotator_type = itertools.cycle
+        self.powerthirst = config.get('powerthirst', False)
+        if self.powerthirst:
+            if GAME_VERSION != 3:
+                raise Exception("Powerthirst Edition is only for 0.75. If you want 64-player support, play Iceball, because I'm not updating Powerthirst. --GM")
+            self.max_name_length = 31
+            self.super_max_players = 64
         self.default_time_limit = config.get('default_time_limit', 20.0)
         self.default_cap_limit = config.get('cap_limit', 10.0)
         self.advance_on_win = int(config.get('advance_on_win', False))
@@ -726,7 +734,7 @@ class FeatureProtocol(ServerProtocol):
         else:
             self.send_chat('%s Next map: %s.' % (message, map.full_name),
                            irc = True)
-            reactor.callLater(5, self.set_map_name, map)
+            reactor.callLater(10, self.set_map_name, map)
     
     def get_mode_name(self):
         return self.game_mode_name
@@ -819,8 +827,8 @@ class FeatureProtocol(ServerProtocol):
                 message = 'Master connection could not be established'
             else:
                 message = 'Master connection lost'
-            print '%s, reconnecting in 20 seconds...' % message
-            self.master_reconnect_call = reactor.callLater(20, 
+            print '%s, reconnecting in 60 seconds...' % message
+            self.master_reconnect_call = reactor.callLater(60, 
                 self.reconnect_master)
     
     def reconnect_master(self):
@@ -882,11 +890,11 @@ class FeatureProtocol(ServerProtocol):
         if address.host in self.hard_bans:
             return 1
     
-    def data_received(self, peer, packet):
+    def data_received(self, peer, packet, channel):
         ip = peer.address.host
         current_time = reactor.seconds()
         try:
-            ServerProtocol.data_received(self, peer, packet)
+            ServerProtocol.data_received(self, peer, packet, channel)
         except (NoDataLeft, InvalidData):
             import traceback
             traceback.print_exc()
@@ -911,10 +919,10 @@ class FeatureProtocol(ServerProtocol):
         reactor.callLater(self.tip_frequency * 60, self.send_tip)
     
     def send_chat(self, value, global_message = True, sender = None,
-                  team = None, irc = False):
+                  team = None, irc = False, color = 0):
         if irc:
             self.irc_say('* %s' % value)
-        ServerProtocol.send_chat(self, value, global_message, sender, team)
+        ServerProtocol.send_chat(self, value, global_message, sender, team, color = color)
 
     # log high CPU usage
     

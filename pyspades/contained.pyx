@@ -101,6 +101,38 @@ cdef class WorldUpdate(Loader):
     id = id_iter.next()
     
     cdef public:
+        dict items
+    
+    cpdef read(self, ByteReader reader):
+        cdef dict items = {}
+        self.items = items 
+        while reader.data_left():
+            p_id = reader.readByte(True)
+            p_x = reader.readFloat(False)
+            p_y = reader.readFloat(False)
+            p_z = reader.readFloat(False)
+            o_x = reader.readFloat(False)
+            o_y = reader.readFloat(False)
+            o_z = reader.readFloat(False)
+            items[p_id] = ((p_x, p_y, p_z), (o_x, o_y, o_z))
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        cdef tuple item
+        for p_id, item in self.items.iteritems():
+            (p_x, p_y, p_z), (o_x, o_y, o_z) = item
+            reader.writeByte(p_id, True)
+            reader.writeFloat(p_x, False)
+            reader.writeFloat(p_y, False)
+            reader.writeFloat(p_z, False)
+            reader.writeFloat(o_x, False)
+            reader.writeFloat(o_y, False)
+            reader.writeFloat(o_z, False)
+
+cdef class WorldUpdate075(Loader):
+    id = WorldUpdate.id
+    
+    cdef public:
         list items
     
     cpdef read(self, ByteReader reader):
@@ -623,6 +655,24 @@ cdef class MapStart(Loader):
     id = id_iter.next()
     
     cdef public:
+        int size, crc
+        object name
+    
+    cpdef read(self, ByteReader reader):
+        self.size = reader.readInt(True, False)
+        self.crc = reader.readInt(True, True)
+        self.name = decode(reader.readString())
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.writeInt(self.size, True, False)
+        reader.writeInt(self.crc, True, True)
+        reader.writeString(encode(self.name))
+
+cdef class MapStart075(Loader):
+    id = MapStart.id
+    
+    cdef public:
         unsigned int size
     
     cpdef read(self, ByteReader reader):
@@ -631,6 +681,18 @@ cdef class MapStart(Loader):
     cpdef write(self, ByteWriter reader):
         reader.writeByte(self.id, True)
         reader.writeInt(self.size, True, False)
+
+cdef class MapStartPT(MapStart):
+    cdef public:
+        unsigned int version
+    
+    cpdef read(self, ByteReader reader):
+        MapStart.read(self, reader)
+        self.version = reader.readInt(True, False)
+    
+    cpdef write(self, ByteWriter reader):
+        MapStart.write(self, reader)
+        reader.writeInt(self.version, True, False)
 
 cdef class MapChunk(Loader):
     id = id_iter.next()
@@ -644,6 +706,9 @@ cdef class MapChunk(Loader):
     cpdef write(self, ByteWriter reader):
         reader.writeByte(self.id, True)
         reader.write(self.data)
+
+cdef class MapChunkPT(MapChunk):
+    id = MapChunk.id - 2
 
 cdef class PlayerLeft(Loader):
     id = id_iter.next()
@@ -813,3 +878,72 @@ cdef class ChangeWeapon(Loader):
         reader.writeByte(self.id, True)
         reader.writeByte(self.player_id, True)
         reader.writeByte(self.weapon, True)
+
+cdef class MapCached(Loader):
+    id = id_iter.next()
+    
+    cdef public:
+        int cached
+
+    cpdef read(self, ByteReader reader):
+        self.cached = reader.readByte(True)
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.writeByte(self.cached, True)
+
+cdef class ScriptStartPT(Loader):
+    id = MapCached.id
+    cdef public:
+        unsigned int size
+        object name
+    
+    cpdef read(self, ByteReader reader):
+        self.size = reader.readInt(True, False)
+        self.name = decode(reader.readString())
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.writeInt(self.size, True, False)
+        reader.writeString(encode(self.name))
+
+cdef class ScriptChunkPT(Loader):
+    id = id_iter.next()
+    
+    cdef public:
+        object data
+    
+    cpdef read(self, ByteReader reader):
+        self.data = reader.read()
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.write(self.data)
+
+cdef class ScriptEndPT(Loader):
+    id = id_iter.next()
+    cdef public:
+        object name
+    
+    cpdef read(self, ByteReader reader):
+        self.name = decode(reader.readString())
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.writeString(encode(self.name))
+
+cdef class ScriptCallPT(Loader):
+    id = id_iter.next()
+    cdef public:
+        object name
+        object data
+    
+    cpdef read(self, ByteReader reader):
+        self.name = decode(reader.readString())
+        self.data = reader.read()
+    
+    cpdef write(self, ByteWriter reader):
+        reader.writeByte(self.id, True)
+        reader.writeString(encode(self.name))
+        reader.write(self.data);
+

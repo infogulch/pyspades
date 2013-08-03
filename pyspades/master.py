@@ -22,18 +22,19 @@ from pyspades.common import *
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from pyspades.bytes import ByteReader
-from pyspades.constants import MASTER_VERSION
+from pyspades.constants import *
 
 import random
 
 STAGING = 0
 PORT = 32886
+PT_PORT = 35054
 
 MAX_SERVER_NAME_SIZE = 31
 MAX_MAP_NAME_SIZE = 20
 MAX_GAME_MODE_SIZE = 7
 
-HOST = '184.172.204.137'
+HOST = 'master.buildandshoot.com'
 
 if STAGING:
     PORT = 32885
@@ -102,18 +103,20 @@ class MasterConnection(BaseConnection):
 
 from pyspades.web import getPage
 
-# other tools:
-# http://www.domaintools.com/research/my-ip/myip.xml
-# http://checkip.dyndns.com/
-
-IP_GETTER = 'http://icanhazip.com/'
+IP_GETTER = 'http://services.buildandshoot.com/getip'
 
 def get_external_ip(interface = ''):
     return getPage(IP_GETTER, bindAddress = (interface, 0))
 
+import socket
+
 def get_master_connection(protocol):
     defer = Deferred()
-    connection = protocol.connect(MasterConnection, HOST, PORT, MASTER_VERSION)
+    master_ip = socket.gethostbyname(HOST)
+    connection = protocol.connect(MasterConnection, master_ip,
+        PT_PORT if protocol.powerthirst else PORT,
+        0x50540000 | PT_VERSION if protocol.powerthirst else MASTER_VERSION)
     connection.server_protocol = protocol
     connection.defer = defer
     return defer
+

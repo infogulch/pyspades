@@ -21,6 +21,7 @@ from random import choice
 from pyspades.constants import *
 from pyspades.common import prettify_timespan
 from pyspades.server import parse_command
+import pyspades.server as server
 from twisted.internet import reactor
 from map import check_rotation
 
@@ -153,6 +154,27 @@ def ban(connection, value, *arg):
     player.ban(reason, duration)
 
 @admin
+def hban(connection, value, *arg):
+    duration = int(60)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
+def dban(connection, value, *arg):
+    duration = int(1440)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
+def wban(connection, value, *arg):
+    duration = int(10080)
+    reason = join_arguments(arg)
+    player = get_player(connection.protocol, value)
+    player.ban(reason, duration)
+
+@admin
 def banip(connection, ip, *arg):
     duration, reason = get_ban_arguments(connection, arg)
     try:
@@ -190,6 +212,13 @@ def say(connection, *arg):
     connection.protocol.send_chat(value)
     connection.protocol.irc_say(value)
 
+@admin
+def csay(connection, color, *arg):
+    value = ' '.join(arg)
+    color = int(color)
+    connection.protocol.send_chat(value, color = color)
+    connection.protocol.irc_say(value)
+
 add_rights('kill', 'admin')
 def kill(connection, value = None):
     if value is None:
@@ -202,6 +231,17 @@ def kill(connection, value = None):
     if connection is not player:
         message = '%s killed %s' % (connection.name, player.name)
         connection.protocol.send_chat(message, irc = True)
+
+@admin
+def sanick(connection, player, nick):
+    if not connection.protocol.powerthirst:
+        return "This command is not supported in vanilla mode"
+    player = get_player(connection.protocol, player, False)
+    nick = nick[:connection.protocol.max_name_length]
+    s = "%s #%i is now known as %s" % (player.name, player.player_id, nick)
+    player.name = nick
+    connection.protocol.call_ascript("void set_name(int, string &in)", [(ASP_INT, player.player_id), (ASP_PSTRING, player.name)])
+    connection.protocol.send_chat(s, irc = True)
 
 @admin
 def heal(connection, player = None):
@@ -347,6 +387,7 @@ def set_balance(connection, value):
         connection.name, value))
 
 @name('togglebuild')
+@alias('tb')
 @admin
 def toggle_build(connection, player = None):
     if player is not None:
@@ -366,6 +407,7 @@ def toggle_build(connection, player = None):
         on_off))
     
 @name('togglekill')
+@alias('tk')
 @admin
 def toggle_kill(connection, player = None):
     if player is not None:
@@ -868,6 +910,9 @@ command_list = [
     who_was,
     fog,
     ban,
+    hban,
+    dban,
+    wban,
     banip,
     unban,
     undo_ban,
@@ -876,7 +921,9 @@ command_list = [
     deaf,
     global_chat,
     say,
+    csay,
     kill,
+    sanick,
     heal,
     lock,
     unlock,
@@ -942,7 +989,7 @@ for command_func in command_list:
 try:
     import pygeoip
     database = pygeoip.GeoIP('./data/GeoLiteCity.dat')
-    
+    @admin
     @name('from')
     def where_from(connection, value = None):
         if value is None:

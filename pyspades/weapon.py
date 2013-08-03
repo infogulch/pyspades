@@ -89,13 +89,17 @@ class BaseWeapon(object):
         return self.get_ammo(True) < -tolerance or not self.shoot
     
     def get_damage(self, value, position1, position2):
-        return self.damage[value]
+        if GAME_VERSION == 3:
+            return self.damage[value]
+        else:
+            falloff = 1 - ((distance_3d_vector(position1, position2)**1.5)*0.0004)
+            return math.ceil(self.damage[value] * falloff)
 
 class Rifle(BaseWeapon):
     name = 'Rifle'
-    delay = 0.5
-    ammo = 10
-    stock = 50
+    delay = 0.5 if GAME_VERSION == 3 else 0.6
+    ammo = 10 if GAME_VERSION == 3 else 8
+    stock = 50 if GAME_VERSION == 3 else 48
     reload_time = 2.5
     slow_reload = False
     
@@ -104,13 +108,18 @@ class Rifle(BaseWeapon):
         HEAD : 100,
         ARMS : 33,
         LEGS : 33
+    } if GAME_VERSION == 3 else {
+        TORSO : 60,
+        HEAD : 1800,
+        ARMS : 50,
+        LEGS : 50
     }
 
 class SMG(BaseWeapon):
     name = 'SMG'
     delay = 0.11 # actually 0.1, but due to AoS scheduling, it's usually 0.11
     ammo = 30
-    stock = 120
+    stock = 120 if GAME_VERSION == 3 else 150
     reload_time = 2.5
     slow_reload = False
     
@@ -119,14 +128,19 @@ class SMG(BaseWeapon):
         HEAD : 75,
         ARMS : 18,
         LEGS : 18
+    } if GAME_VERSION == 3 else {
+        TORSO : 40,
+        HEAD : 60,
+        ARMS : 20,
+        LEGS : 20
     }
 
 class Shotgun(BaseWeapon):
     name = 'Shotgun'
-    delay = 1.0
-    ammo = 6
+    delay = 1.0 if GAME_VERSION == 3 else 0.8
+    ammo = 6 if GAME_VERSION == 3 else 8
     stock = 48
-    reload_time = 0.5
+    reload_time = 0.5 if GAME_VERSION == 3 else 0.4
     slow_reload = True
     
     damage = {
@@ -134,13 +148,43 @@ class Shotgun(BaseWeapon):
         HEAD : 37,
         ARMS : 16,
         LEGS : 16
+    } if GAME_VERSION == 3 else {
+        TORSO : 40,
+        HEAD : 60,
+        ARMS : 20,
+        LEGS : 20
     }
+
+class RiflePT(Rifle):
+    pass # nothing we need to change here!
+
+class SMGPT(SMG):
+    delay = 0.075 # 1/15, scaled up a bit for scheduling reasons
+    ammo = 20
+    stock = 120
+    reload_time = 5.0
+    slow_reload = False
+    
+    damage = {
+        TORSO : 30,
+        HEAD : 34,
+        ARMS : 21,
+        LEGS : 21
+    }
+
+class ShotgunPT(Shotgun):
+    # TODO: rebalance this!
+    pass
 
 WEAPONS = {
     RIFLE_WEAPON : Rifle,
     SMG_WEAPON : SMG,
     SHOTGUN_WEAPON : Shotgun,
+    RIFLE_PT_WEAPON : RiflePT,
+    SMG_PT_WEAPON : SMGPT,
+    SHOTGUN_PT_WEAPON : ShotgunPT,
 }
 
 for id, weapon in WEAPONS.iteritems():
     weapon.id = id
+
