@@ -1006,22 +1006,20 @@ function handle_network(sec_current, sec_delta)
 					dx = (nx - plr.camx)
 					dy = (ny - plr.camy)
 					dz = (nz - plr.camz)
-					if dx*dx + dz*dz > 2*2 or dy*dy > 2*2 then
-						plr.camx = nx
-						plr.camy = ny
-						plr.camz = nz
-						if plr.ltick then
-							local diff = sec_current - plr.ltick
-							if diff > 0.04 then
-								local vx, vy, vz
-								vx = (plr.camx - plr.lcamx) / diff * PHY_TICK
-								vy = (plr.camy - plr.lcamy) / diff * PHY_TICK
-								vz = (plr.camz - plr.lcamz) / diff * PHY_TICK
-								if vx*vx + vy*vy + vz*vz < 20.0^2 then
-									plr.vx = vx
-									plr.vy = vy
-									plr.vz = vz
-								end
+					plr.camx = nx
+					plr.camy = ny
+					plr.camz = nz
+					if plr.ltick then
+						local diff = sec_current - plr.ltick
+						if diff > 0.04 then
+							local vx, vy, vz
+							vx = (plr.camx - plr.lcamx) / diff * PHY_TICK
+							vy = (plr.camy - plr.lcamy) / diff * PHY_TICK
+							vz = (plr.camz - plr.lcamz) / diff * PHY_TICK
+							if vx*vx + vy*vy + vz*vz < 20.0^2 then
+								plr.vx = vx
+								plr.vy = vy
+								plr.vz = vz
 							end
 						end
 					end

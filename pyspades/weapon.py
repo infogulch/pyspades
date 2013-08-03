@@ -110,7 +110,7 @@ class Rifle(BaseWeapon):
         LEGS : 33
     } if GAME_VERSION == 3 else {
         TORSO : 60,
-        HEAD : 180,
+        HEAD : 1800,
         ARMS : 50,
         LEGS : 50
     }
